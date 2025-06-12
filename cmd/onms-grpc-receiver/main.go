@@ -27,6 +27,45 @@ func (s *serviceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 			return err
 		}
 
+		logger := slog.With("id", in.GetInstanceId(),
+			"name", in.GetInstanceName(),
+			"snapshot", in.GetSnapshot(),
+			"alarmcount", len(in.GetAlarms()),
+		)
+
+		for _, alarm := range in.GetAlarms() {
+			logger.Info("AlarmUpdate",
+				"id", alarm.GetId(),
+				"uei", alarm.GetUei(),
+				slog.Group("NodeCriteria",
+					"id", alarm.GetNodeCriteria().GetId(),
+					"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
+					"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
+					"node_label", alarm.GetNodeCriteria().GetNodeLabel(),
+					"location", alarm.GetNodeCriteria().GetLocation(),
+				),
+				"ip_address", alarm.GetIpAddress(),
+				"service_name", alarm.GetServiceName(),
+				"reduction_key", alarm.GetReductionKey(),
+				"type", alarm.GetType(),
+				"count", alarm.GetCount(),
+				"severity", alarm.GetSeverity(),
+				"first_event_time", alarm.GetFirstEventTime(),
+				"description", alarm.GetDescription(),
+				"log_message", alarm.GetLogMessage(),
+				"ack_user", alarm.GetAckUser(),
+				"ack_time", alarm.GetAckTime(),
+				"last_event_time", alarm.GetLastEventTime(),
+				"if_index", alarm.GetIfIndex(),
+				"operator_instructions", alarm.GetOperatorInstructions(),
+				"clear_key", alarm.GetClearKey(),
+				"managed_object_instance", alarm.GetManagedObjectInstance(),
+				"managed_object_type", alarm.GetManagedObjectType(),
+				"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
+				"last_update_time", alarm.GetLastUpdateTime(),
+			)
+		}
+
 		// print message
 		slog.Info("AlarmUpdate",
 			"id", in.GetInstanceId(),
