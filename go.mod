@@ -5,7 +5,7 @@ go 1.22.4
 require (
 	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.20.1
-	google.golang.org/grpc v1.70.0
+	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
 )
 
