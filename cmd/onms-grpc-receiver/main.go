@@ -1,13 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"io"
 	"log"
 	"log/slog"
 	"net"
 
-	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/onmsgrpc"
+	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -15,10 +14,10 @@ import (
 )
 
 type serviceSyncServer struct {
-	pb.UnimplementedServiceSyncServer
+	pb.UnimplementedNmsInventoryServiceSyncServer
 }
 
-func (s *serviceSyncServer) InventoryUpdate(stream grpc.BidiStreamingServer[pb.InventoryUpdateList, emptypb.Empty]) error {
+func (s *serviceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
@@ -28,24 +27,17 @@ func (s *serviceSyncServer) InventoryUpdate(stream grpc.BidiStreamingServer[pb.I
 			return err
 		}
 
-		// convert services to JSON
-		services, err := json.Marshal(in.Services)
-		if err != nil {
-			slog.Error("error marshaling services into JSON", "error", err)
-			continue
-		}
-
 		// print message
-		slog.Info("InventoryUpdate",
-			"foreignSource", in.ForeignSource,
-			"foreignType", in.ForeignType,
-			"snapshot", in.Snapshot,
-			"services", services,
+		slog.Info("AlarmUpdate",
+			"id", in.GetInstanceId(),
+			"name", in.GetInstanceName(),
+			"snapshot", in.GetSnapshot(),
+			"alarmcount", len(in.GetAlarms()),
 		)
 	}
 }
 
-func (s *serviceSyncServer) StateUpdate(stream grpc.BidiStreamingServer[pb.StateUpdateList, emptypb.Empty]) error {
+func (s *serviceSyncServer) EventUpdate(stream grpc.BidiStreamingServer[pb.EventUpdateList, emptypb.Empty]) error {
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
@@ -55,18 +47,51 @@ func (s *serviceSyncServer) StateUpdate(stream grpc.BidiStreamingServer[pb.State
 			return err
 		}
 
-		// convert updates to JSON
-		updates, err := json.Marshal(in.Updates)
+		// print message
+		slog.Info("EventUpdate",
+			"id", in.GetInstanceId(),
+			"name", in.GetInstanceName(),
+			"snapshot", in.GetSnapshot(),
+			"alarmcount", len(in.GetEvent()),
+		)
+	}
+}
+
+func (s *serviceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.HeartBeat, emptypb.Empty]) error {
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
 		if err != nil {
-			slog.Error("error marshaling services into JSON", "error", err)
-			continue
+			return err
 		}
 
 		// print message
-		slog.Info("StateUpdate",
-			"foreignSource", in.ForeignSource,
-			"foreignType", in.ForeignType,
-			"updates", updates,
+		slog.Info("HeartBeatUpdate",
+			"message", in.GetMessage(),
+			"instance", in.GetMonitoringInstance(),
+			"timestamp", in.GetTimestamp(),
+		)
+	}
+}
+
+func (s *serviceSyncServer) InventoryUpdate(stream grpc.BidiStreamingServer[pb.NmsInventoryUpdateList, emptypb.Empty]) error {
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		// print message
+		slog.Info("InventoryUpdate",
+			"id", in.GetInstanceId(),
+			"name", in.GetInstanceName(),
+			"snapshot", in.GetSnapshot(),
+			"nodecount", len(in.GetNodes()),
 		)
 	}
 }
@@ -96,6 +121,6 @@ func main() {
 	srv := &serviceSyncServer{}
 
 	// register and start server
-	pb.RegisterServiceSyncServer(grpcServer, srv)
+	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, srv)
 	grpcServer.Serve(l)
 }
