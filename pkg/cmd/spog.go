@@ -197,12 +197,10 @@ type spogServiceSyncServer struct {
 }
 
 func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
-	list := make([]*models.PostableAlert, 0)
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
-			// send to alertmanager at the end
-			return s.send(list)
+			return nil
 		}
 		if err != nil {
 			return err
@@ -215,6 +213,8 @@ func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.A
 		)
 
 		logger.Info("AlarmUpdate")
+
+		list := make([]*models.PostableAlert, 0)
 
 		for _, alarm := range in.GetAlarms() {
 			if s.alertmanager == nil {
@@ -280,20 +280,19 @@ func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.A
 				})
 			}
 		}
+
+		// send to alertmanager at the end
+		if err := s.send(list); err != nil {
+			s.logger.Error("error during send", "error", err)
+		}
 	}
 }
 
 func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.HeartBeat, emptypb.Empty]) error {
-	list := make([]*models.PostableAlert, 0)
+
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
-			// send to alertmanager at the end
-			if err := s.send(list); err != nil {
-				s.logger.Error("error during send", "error", err)
-				return err
-			}
-
 			return nil
 		}
 		if err != nil {
@@ -314,7 +313,6 @@ func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[
 		}
 
 		// add heartbeat to list
-
 		hb := &models.PostableAlert{
 			Alert: models.Alert{
 				Labels: map[string]string{
@@ -327,7 +325,10 @@ func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[
 		}
 		s.logger.Debug("adding message to list", "message", hb)
 
-		list = append(list, hb)
+		// send to alertmanager at the end
+		if err := s.send([]*models.PostableAlert{hb}); err != nil {
+			s.logger.Error("error during send", "error", err)
+		}
 	}
 }
 

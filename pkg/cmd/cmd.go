@@ -9,9 +9,6 @@ import (
 )
 
 type rootCommand struct {
-	silent bool
-	debug  bool
-
 	*simplecommand.Command
 }
 
