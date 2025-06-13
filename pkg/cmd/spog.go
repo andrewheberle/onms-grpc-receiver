@@ -289,7 +289,12 @@ func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[
 		in, err := stream.Recv()
 		if err == io.EOF {
 			// send to alertmanager at the end
-			return s.send(list)
+			if err := s.send(list); err != nil {
+				s.logger.Error("error during send", "error", err)
+				return err
+			}
+
+			return nil
 		}
 		if err != nil {
 			return err
