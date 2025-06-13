@@ -335,6 +335,8 @@ func (s *spogServiceSyncServer) send(list []*models.PostableAlert) error {
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("bad status code from alertmanager: %d", resp.StatusCode)
 		}
+
+		s.logger.Info("sent payload to alertmanager", "url", s.alertmanager.String(), "count", len(list), "status", resp.Status)
 	}
 
 	return nil
