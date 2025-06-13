@@ -121,6 +121,8 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 			return err
 		}
 
+		c.logger.Debug("set up alertmanager", "url", u.String())
+
 		c.srv.alertmanager = u
 	}
 
@@ -302,11 +304,13 @@ func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[
 
 		// finish here if alertmanager is not set
 		if s.alertmanager == nil {
+			s.logger.Debug("alertmanager not set")
 			continue
 		}
 
 		// add heartbeat to list
-		list = append(list, &models.PostableAlert{
+
+		hb := &models.PostableAlert{
 			Alert: models.Alert{
 				Labels: map[string]string{
 					"alertname":     "OpenNMSHeartbeat",
@@ -315,7 +319,10 @@ func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[
 					"instance_type": in.GetMonitoringInstance().GetInstanceType(),
 				},
 			},
-		})
+		}
+		s.logger.Debug("adding message to list", "message", hb)
+
+		list = append(list, hb)
 	}
 }
 
