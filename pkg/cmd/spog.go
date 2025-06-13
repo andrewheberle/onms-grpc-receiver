@@ -93,6 +93,19 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		return err
 	}
 
+	// set up logger
+	logLevel := new(slog.LevelVar)
+	if c.silent {
+		c.logger = slog.New(slog.DiscardHandler)
+	} else {
+		c.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
+	}
+
+	// switch on debug
+	if c.debug {
+		logLevel.Set(slog.LevelDebug)
+	}
+
 	// set up server
 	c.srv = &spogServiceSyncServer{
 		client: &http.Client{
@@ -117,19 +130,6 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 			Headers: c.headers,
 		}
 
-	}
-
-	// set up logger
-	logLevel := new(slog.LevelVar)
-	if c.silent {
-		c.logger = slog.New(slog.DiscardHandler)
-	} else {
-		c.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
-	}
-
-	// switch on debug
-	if c.debug {
-		logLevel.Set(slog.LevelDebug)
 	}
 
 	c.logger.Debug("completed PreRun", "command", this.CobraCommand.Name())
