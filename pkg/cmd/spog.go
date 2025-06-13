@@ -36,6 +36,9 @@ type spogCommand struct {
 	listenAddress string
 	alertManager  string
 
+	debug  bool
+	silent bool
+
 	headers map[string]string
 
 	*simplecommand.Command
@@ -52,6 +55,9 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service listen address")
 	cmd.Flags().StringVar(&c.alertManager, "alertmanager", "", "Alertmanager address")
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
+
+	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
+	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
 
 	return nil
 }
@@ -115,16 +121,14 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 
 	// set up logger
 	logLevel := new(slog.LevelVar)
-	silent, err := this.CobraCommand.InheritedFlags().GetBool("silent")
-	if err == nil && silent {
+	if c.silent {
 		c.logger = slog.New(slog.DiscardHandler)
 	} else {
 		c.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 	}
 
 	// switch on debug
-	debug, err := this.CobraCommand.InheritedFlags().GetBool("debug")
-	if err == nil && debug {
+	if c.debug {
 		logLevel.Set(slog.LevelDebug)
 	}
 
