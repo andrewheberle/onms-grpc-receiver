@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -260,6 +261,7 @@ func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.A
 					"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
 					"instance_id":   in.GetInstanceId(),
 					"instance_name": in.GetInstanceName(),
+					"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
 				}
 
 				// add service if set
