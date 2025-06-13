@@ -19,6 +19,7 @@ import (
 	"github.com/andrewheberle/simplecommand"
 	"github.com/bep/simplecobra"
 	"github.com/cloudflare/certinel/fswatcher"
+	"github.com/go-openapi/strfmt"
 	"github.com/oklog/run"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"google.golang.org/grpc"
@@ -36,6 +37,8 @@ type spogCommand struct {
 	key           string
 	listenAddress string
 	alertManager  string
+	siteMap       map[string]string
+	urlMap        map[string]string
 
 	debug  bool
 	silent bool
@@ -56,6 +59,8 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service listen address")
 	cmd.Flags().StringVar(&c.alertManager, "alertmanager", "", "Alertmanager address")
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
+	cmd.Flags().StringToStringVar(&c.urlMap, "map.url", map[string]string{}, "Map instance ID's to URLs")
+	cmd.Flags().StringToStringVar(&c.siteMap, "map.site", map[string]string{}, "Map instance ID's to sites")
 
 	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
@@ -112,7 +117,9 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		client: &http.Client{
 			Timeout: time.Second * 5,
 		},
-		logger: c.logger,
+		logger:  c.logger,
+		siteMap: c.siteMap,
+		urlMap:  c.urlMap,
 	}
 
 	// set up alert manager url
@@ -193,6 +200,8 @@ type spogServiceSyncServer struct {
 	alertmanager *url.URL
 	logger       *slog.Logger
 	client       *http.Client
+	siteMap      map[string]string
+	urlMap       map[string]string
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
@@ -215,8 +224,10 @@ func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.A
 
 		logger.Info("AlarmUpdate")
 
-		list := make([]*models.PostableAlert, 0)
+		site := inmap(in.GetInstanceId(), s.siteMap)
+		url := inmap(in.GetInstanceId(), s.urlMap)
 
+		list := make([]*models.PostableAlert, 0)
 		for _, alarm := range in.GetAlarms() {
 			if s.alertmanager == nil {
 				logger.Info("AlarmUpdate",
@@ -274,11 +285,23 @@ func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.A
 					labels["ip_address"] = ip
 				}
 
+				// add site if mapping set
+				if site != "" {
+					labels["site"] = site
+				}
+
+				alert := models.Alert{
+					Labels: labels,
+				}
+
+				// add generator URL if mapping set
+				if url != "" {
+					alert.GeneratorURL = strfmt.URI(fmt.Sprintf("%s/opennms/alarm/detail.htm?id=%d", url, alarm.GetId()))
+				}
+
 				// add to list
 				list = append(list, &models.PostableAlert{
-					Alert: models.Alert{
-						Labels: labels,
-					},
+					Alert: alert,
 				})
 			}
 		}
@@ -355,4 +378,12 @@ func (s *spogServiceSyncServer) send(list []*models.PostableAlert) error {
 	}
 
 	return nil
+}
+
+func inmap(k string, m map[string]string) string {
+	if v, ok := m[k]; ok {
+		return v
+	}
+
+	return ""
 }

@@ -8,6 +8,7 @@ require (
 	github.com/andrewheberle/simplecommand v0.3.0
 	github.com/bep/simplecobra v0.6.0
 	github.com/cloudflare/certinel v0.4.1
+	github.com/go-openapi/strfmt v0.23.0
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/alertmanager v0.28.1
 	google.golang.org/grpc v1.73.0
@@ -24,7 +25,6 @@ require (
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/loads v0.22.0 // indirect
 	github.com/go-openapi/spec v0.21.0 // indirect
-	github.com/go-openapi/strfmt v0.23.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/go-openapi/validate v0.24.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
