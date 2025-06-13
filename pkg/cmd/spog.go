@@ -208,6 +208,8 @@ func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.A
 			"alarmcount", len(in.GetAlarms()),
 		)
 
+		logger.Info("AlarmUpdate")
+
 		for _, alarm := range in.GetAlarms() {
 			if s.alertmanager == nil {
 				logger.Info("AlarmUpdate",
@@ -288,13 +290,14 @@ func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[
 		}
 
 		// print message
-		if s.alertmanager == nil {
-			s.logger.Info("HeartBeatUpdate",
-				"message", in.GetMessage(),
-				"instance", in.GetMonitoringInstance(),
-				"timestamp", in.GetTimestamp(),
-			)
+		s.logger.Info("HeartBeatUpdate",
+			"message", in.GetMessage(),
+			"instance", in.GetMonitoringInstance(),
+			"timestamp", in.GetTimestamp(),
+		)
 
+		// finish here if alertmanager is not set
+		if s.alertmanager == nil {
 			continue
 		}
 
