@@ -159,7 +159,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	grpcServer := grpc.NewServer(c.opts...)
 	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, c.srv)
 	g.Add(func() error {
-		c.logger.Info("started gRPC server", "address", c.listenAddress)
+		c.logger.Info("started gRPC receiver", "address", c.listenAddress)
 
 		return grpcServer.Serve(l)
 	}, func(err error) {

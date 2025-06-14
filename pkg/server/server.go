@@ -171,9 +171,12 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 		}
 
 		// print message
-		s.logger.Info("HeartBeatUpdate",
-			"message", in.GetMessage(),
-			"instance", in.GetMonitoringInstance(),
+		s.logger.Info(in.GetMessage(),
+			slog.Group("instance",
+				"id", in.GetMonitoringInstance().GetInstanceId(),
+				"type", in.GetMonitoringInstance().GetInstanceType(),
+				"name", in.GetMonitoringInstance().GetInstanceName(),
+			),
 			"timestamp", in.GetTimestamp(),
 		)
 
