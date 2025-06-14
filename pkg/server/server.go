@@ -237,10 +237,9 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 				}
 
 				logger.Info("sent to alertmanager", "url", am, "status", resp.Status)
-				return nil
 			}
 
-			return fmt.Errorf("could not send payload to any alertmanager")
+			return nil
 		}()
 	}
 
