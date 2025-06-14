@@ -23,7 +23,6 @@ type ServiceSyncServer struct {
 	alertmanagers func() ([]string, error)
 	logger        *slog.Logger
 	httpClient    *http.Client
-	siteMap       map[string]string
 	urlMap        map[string]string
 	dnsClient     *net.Resolver
 
@@ -130,8 +129,6 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 				// set site as node location or site if mapping set
 				if location := alarm.GetNodeCriteria().GetLocation(); location != "" {
 					labels["site"] = location
-				} else if site := inmap(in.GetInstanceId(), s.siteMap); site != "" {
-					labels["site"] = site
 				}
 
 				alert := models.Alert{
@@ -192,11 +189,6 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			"instance_id":   in.GetMonitoringInstance().GetInstanceId(),
 			"instance_name": in.GetMonitoringInstance().GetInstanceName(),
 			"instance_type": in.GetMonitoringInstance().GetInstanceType(),
-		}
-
-		// add site if we can look it up
-		if site := inmap(in.GetMonitoringInstance().GetInstanceId(), s.siteMap); site != "" {
-			labels["site"] = site
 		}
 
 		hb := &models.PostableAlert{
