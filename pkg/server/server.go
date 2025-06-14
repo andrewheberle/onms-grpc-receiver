@@ -227,19 +227,26 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 		}
 
 		// try our list
-		for _, am := range ams {
-			resp, err := s.httpClient.Post(am, "application/json", buf)
-			if err != nil {
-				return err
+		return func() error {
+			logger := s.logger.With("count", len(list))
+			for _, am := range ams {
+				resp, err := s.httpClient.Post(am, "application/json", buf)
+				if err != nil {
+					logger.Warn("error sending to alertmanager", "url", am, "status", resp.Status, "error", err)
+					continue
+				}
+
+				if resp.StatusCode != http.StatusOK {
+					logger.Warn("bad status code from alertmanager", "url", am, "status", resp.Status)
+					continue
+				}
+
+				logger.Info("sent to alertmanager", "url", am, "status", resp.Status)
+				return nil
 			}
 
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("bad status code from alertmanager: %d", resp.StatusCode)
-			}
-
-			s.logger.Info("sent payload to alertmanager", "url", am, "count", len(list), "status", resp.Status)
-			break
-		}
+			return fmt.Errorf("could not send payload to any alertmanager")
+		}()
 	}
 
 	return nil
