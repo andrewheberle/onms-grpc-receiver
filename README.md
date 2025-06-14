@@ -30,24 +30,16 @@ The alert name sent to Alertmanager is the OpenNMS "uei" value such as "uei.open
 
 Labels are set as follows:
 
-| OpenNMS Alarm Field                      | Alertmanager Label |  |
-|------------------------------------------|--------------------|--|
-| Node ID                                  | node_id            |
-| Node Name                                | node_name          |
-| Instance ID (UUID of Horizon instance)   | instance_id        |
-| Instance Name (name of Horizon instance) | instance_name      |
-| Severity                                 | severity           |
+| OpenNMS Alarm Field                      | Alertmanager Label |                                 |
+|------------------------------------------|--------------------|---------------------------------|
+| Node ID                                  | node_id            |                                 |
+| Node Name                                | node_name          |                                 |
+| Instance ID (UUID of Horizon instance)   | instance_id        |                                 |
+| Instance Name (name of Horizon instance) | instance_name      |                                 |
+| Severity                                 | severity           |                                 |
 | Service (name)                           | service            | Only present on service outages |
 | Interface (IP address)                   | ip_address         | Only present on service outages |
-| Node Location                            | site               | Set if node has a location, otherwise see below |
-
-### Location/Site mapping
-
-If an OpenNMS alarm includes a node location, this will be included as the `site` label on the alert sent to Alertmanager, however if this is missing the `site` label may be set based on a provided "mapping" of `instance_id` to a name via the command line option `--map.site` as follows:
-
-```sh
-onms-grpc-receiver spog --map.site "uuid-of-horizon-instanceA=siteA,uuid-of-horizon-instanceB=siteB"
-```
+| Node Location                            | site               |                                 |
 
 ### Alarm link/URL
 
