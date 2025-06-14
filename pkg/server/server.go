@@ -20,12 +20,12 @@ import (
 )
 
 type ServiceSyncServer struct {
-	alertmanager func() ([]string, error)
-	logger       *slog.Logger
-	httpClient   *http.Client
-	siteMap      map[string]string
-	urlMap       map[string]string
-	dnsClient    *net.Resolver
+	alertmanagers func() ([]string, error)
+	logger        *slog.Logger
+	httpClient    *http.Client
+	siteMap       map[string]string
+	urlMap        map[string]string
+	dnsClient     *net.Resolver
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
@@ -71,7 +71,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 
 		list := make([]*models.PostableAlert, 0)
 		for _, alarm := range in.GetAlarms() {
-			if s.alertmanager == nil {
+			if s.alertmanagers == nil {
 				logger.Info("AlarmUpdate",
 					"id", alarm.GetId(),
 					"uei", alarm.GetUei(),
@@ -181,7 +181,7 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 		)
 
 		// finish here if alertmanager is not set
-		if s.alertmanager == nil {
+		if s.alertmanagers == nil {
 			s.logger.Debug("alertmanager not set")
 			continue
 		}
@@ -221,7 +221,7 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 			return err
 		}
 
-		ams, err := s.alertmanager()
+		ams, err := s.alertmanagers()
 		if err != nil {
 			return err
 		}

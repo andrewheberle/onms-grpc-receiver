@@ -28,7 +28,7 @@ func WithHeaders(headers map[string]string) ServiceSyncServerOption {
 func WithAlertmanagerUrl(u *url.URL) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) {
 		u.Path = "/api/v2/alerts"
-		s.alertmanager = func() ([]string, error) {
+		s.alertmanagers = func() ([]string, error) {
 			return []string{u.String()}, nil
 		}
 	}
@@ -36,7 +36,7 @@ func WithAlertmanagerUrl(u *url.URL) ServiceSyncServerOption {
 
 func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) {
-		s.alertmanager = func() ([]string, error) {
+		s.alertmanagers = func() ([]string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 			defer cancel()
 
