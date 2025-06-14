@@ -31,8 +31,7 @@ type spogCommand struct {
 	alertManager       string
 	alertManagerScheme string
 	alertManagerSrv    string
-	siteMap            map[string]string
-	urlMap             map[string]string
+	urlMapping         map[string]string
 
 	debug  bool
 	silent bool
@@ -57,8 +56,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.alertManagerSrv, "alertmanager.srv", "", "Alertmanager SRV Record")
 	cmd.MarkFlagsMutuallyExclusive("alertmanager.url", "alertmanager.srv")
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
-	cmd.Flags().StringToStringVar(&c.urlMap, "map.url", map[string]string{}, "Map instance ID's to URLs")
-	cmd.Flags().StringToStringVar(&c.siteMap, "map.site", map[string]string{}, "Map instance ID's to sites")
+	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 
 	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
@@ -87,8 +85,7 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	// server options
 	opts := []server.ServiceSyncServerOption{
 		server.WithLogger(c.logger),
-		server.WithSiteMap(c.siteMap),
-		server.WithURLMap(c.urlMap),
+		server.WithURLMapping(c.urlMapping),
 	}
 
 	// set up alertmanager via url

@@ -55,13 +55,7 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 	}
 }
 
-func WithSiteMap(m map[string]string) ServiceSyncServerOption {
-	return func(s *ServiceSyncServer) {
-		s.siteMap = m
-	}
-}
-
-func WithURLMap(m map[string]string) ServiceSyncServerOption {
+func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) {
 		s.urlMap = m
 	}
