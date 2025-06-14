@@ -9,6 +9,7 @@ require (
 	github.com/bep/simplecobra v0.6.0
 	github.com/cloudflare/certinel v0.4.1
 	github.com/go-openapi/strfmt v0.23.0
+	github.com/miekg/dns v1.1.41
 	github.com/oklog/run v1.1.0
 	github.com/prometheus/alertmanager v0.28.1
 	google.golang.org/grpc v1.73.0

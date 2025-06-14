@@ -1,44 +1,38 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
-	"strings"
-	"time"
 
+	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/andrewheberle/simplecommand"
 	"github.com/bep/simplecobra"
 	"github.com/cloudflare/certinel/fswatcher"
-	"github.com/go-openapi/strfmt"
 	"github.com/oklog/run"
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type spogCommand struct {
 	logger *slog.Logger
 
-	srv  *spogServiceSyncServer
+	srv  *server.ServiceSyncServer
 	opts []grpc.ServerOption
 
-	cert          string
-	key           string
-	listenAddress string
-	alertManager  string
-	siteMap       map[string]string
-	urlMap        map[string]string
+	cert               string
+	key                string
+	listenAddress      string
+	alertManager       string
+	alertManagerScheme string
+	alertManagerSrv    string
+	siteMap            map[string]string
+	urlMap             map[string]string
 
 	debug  bool
 	silent bool
@@ -56,8 +50,12 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
 	cmd.Flags().StringVar(&c.cert, "cert", "", "TLS Certificate")
 	cmd.Flags().StringVar(&c.key, "key", "", "TLS Key")
+	cmd.MarkFlagsRequiredTogether("cert", "key")
 	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service listen address")
-	cmd.Flags().StringVar(&c.alertManager, "alertmanager", "", "Alertmanager address")
+	cmd.Flags().StringVar(&c.alertManager, "alertmanager.url", "", "Alertmanager URL")
+	cmd.Flags().StringVar(&c.alertManagerScheme, "alertmanager.scheme", "http", "Alertmanager scheme (http/https) when SRV records are used")
+	cmd.Flags().StringVar(&c.alertManagerSrv, "alertmanager.srv", "", "Alertmanager SRV Record")
+	cmd.MarkFlagsMutuallyExclusive("alertmanager.url", "alertmanager.srv")
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
 	cmd.Flags().StringToStringVar(&c.urlMap, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().StringToStringVar(&c.siteMap, "map.site", map[string]string{}, "Map instance ID's to sites")
@@ -66,32 +64,6 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
 
 	return nil
-}
-
-type customTransport struct {
-	Transport http.RoundTripper
-	Headers   map[string]string
-}
-
-func (t *customTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Clone the request to avoid modifying the original
-	newReq := req.Clone(req.Context())
-	if newReq.Header == nil {
-		newReq.Header = make(http.Header)
-	}
-	for key, value := range t.Headers {
-		newReq.Header.Set(key, value)
-	}
-
-	// Use the underlying transport to execute the request
-	return t.transport().RoundTrip(newReq)
-}
-
-func (t *customTransport) transport() http.RoundTripper {
-	if t.Transport != nil {
-		return t.Transport
-	}
-	return http.DefaultTransport
 }
 
 func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
@@ -112,17 +84,14 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		logLevel.Set(slog.LevelDebug)
 	}
 
-	// set up server
-	c.srv = &spogServiceSyncServer{
-		client: &http.Client{
-			Timeout: time.Second * 5,
-		},
-		logger:  c.logger,
-		siteMap: c.siteMap,
-		urlMap:  c.urlMap,
+	// server options
+	opts := []server.ServiceSyncServerOption{
+		server.WithLogger(c.logger),
+		server.WithSiteMap(c.siteMap),
+		server.WithURLMap(c.urlMap),
 	}
 
-	// set up alert manager url
+	// set up alertmanager via url
 	if c.alertManager != "" {
 		u, err := url.Parse(c.alertManager)
 		if err != nil {
@@ -131,16 +100,23 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 
 		c.logger.Debug("set up alertmanager", "url", u.String())
 
-		c.srv.alertmanager = u
+		opts = append(opts, server.WithAlertmanagerUrl(u))
+	}
+
+	// set up alertmanager via SRV
+	if c.alertManagerSrv != "" {
+		c.logger.Debug("set up alertmanager", "scheme", c.alertManagerScheme, "srv", c.alertManagerSrv)
+
+		opts = append(opts, server.WithAlertManagerSrv(c.alertManagerScheme, c.alertManagerSrv))
 	}
 
 	// add custom headers if set
 	if len(c.headers) > 0 {
-		c.srv.client.Transport = &customTransport{
-			Headers: c.headers,
-		}
-
+		opts = append(opts, server.WithHeaders(c.headers))
 	}
+
+	// set up server
+	c.srv = server.NewServiceSyncServer(opts...)
 
 	c.logger.Debug("completed PreRun", "command", this.CobraCommand.Name())
 
@@ -194,196 +170,4 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	})
 
 	return g.Run()
-}
-
-type spogServiceSyncServer struct {
-	alertmanager *url.URL
-	logger       *slog.Logger
-	client       *http.Client
-	siteMap      map[string]string
-	urlMap       map[string]string
-
-	pb.UnimplementedNmsInventoryServiceSyncServer
-}
-
-func (s *spogServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		logger := s.logger.With("id", in.GetInstanceId(),
-			"name", in.GetInstanceName(),
-			"snapshot", in.GetSnapshot(),
-			"alarmcount", len(in.GetAlarms()),
-		)
-
-		logger.Info("AlarmUpdate")
-
-		site := inmap(in.GetInstanceId(), s.siteMap)
-		url := inmap(in.GetInstanceId(), s.urlMap)
-
-		list := make([]*models.PostableAlert, 0)
-		for _, alarm := range in.GetAlarms() {
-			if s.alertmanager == nil {
-				logger.Info("AlarmUpdate",
-					"id", alarm.GetId(),
-					"uei", alarm.GetUei(),
-					slog.Group("NodeCriteria",
-						"id", alarm.GetNodeCriteria().GetId(),
-						"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
-						"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
-						"node_label", alarm.GetNodeCriteria().GetNodeLabel(),
-						"location", alarm.GetNodeCriteria().GetLocation(),
-					),
-					"ip_address", alarm.GetIpAddress(),
-					"service_name", alarm.GetServiceName(),
-					"reduction_key", alarm.GetReductionKey(),
-					"type", alarm.GetType(),
-					"count", alarm.GetCount(),
-					"severity", alarm.GetSeverity(),
-					"first_event_time", alarm.GetFirstEventTime(),
-					"description", alarm.GetDescription(),
-					"log_message", alarm.GetLogMessage(),
-					"ack_user", alarm.GetAckUser(),
-					"ack_time", alarm.GetAckTime(),
-					"last_event_time", alarm.GetLastEventTime(),
-					"if_index", alarm.GetIfIndex(),
-					"operator_instructions", alarm.GetOperatorInstructions(),
-					"clear_key", alarm.GetClearKey(),
-					"managed_object_instance", alarm.GetManagedObjectInstance(),
-					"managed_object_type", alarm.GetManagedObjectType(),
-					"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
-					"last_update_time", alarm.GetLastUpdateTime(),
-				)
-
-				continue
-			}
-
-			if alarm.GetSeverity() != uint32(pb.Severity_CLEARED) {
-				// add basics
-				labels := map[string]string{
-					"alertname":     alarm.GetUei(),
-					"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
-					"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
-					"instance_id":   in.GetInstanceId(),
-					"instance_name": in.GetInstanceName(),
-					"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
-				}
-
-				// add service if set
-				if service := alarm.GetServiceName(); service != "" {
-					labels["service"] = service
-				}
-
-				// add ip_address if set
-				if ip := alarm.GetIpAddress(); ip != "" {
-					labels["ip_address"] = ip
-				}
-
-				// add site if mapping set
-				if site != "" {
-					labels["site"] = site
-				}
-
-				alert := models.Alert{
-					Labels: labels,
-				}
-
-				// add generator URL if mapping set
-				if url != "" {
-					alert.GeneratorURL = strfmt.URI(fmt.Sprintf("%s/opennms/alarm/detail.htm?id=%d", url, alarm.GetId()))
-				}
-
-				// add to list
-				list = append(list, &models.PostableAlert{
-					Alert: alert,
-				})
-			}
-		}
-
-		// send to alertmanager at the end
-		if err := s.send(list); err != nil {
-			s.logger.Error("error during send", "error", err)
-		}
-	}
-}
-
-func (s *spogServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.HeartBeat, emptypb.Empty]) error {
-
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		// print message
-		s.logger.Info("HeartBeatUpdate",
-			"message", in.GetMessage(),
-			"instance", in.GetMonitoringInstance(),
-			"timestamp", in.GetTimestamp(),
-		)
-
-		// finish here if alertmanager is not set
-		if s.alertmanager == nil {
-			s.logger.Debug("alertmanager not set")
-			continue
-		}
-
-		// add heartbeat to list
-		hb := &models.PostableAlert{
-			Alert: models.Alert{
-				Labels: map[string]string{
-					"alertname":     "OpenNMSHeartbeat",
-					"instance_id":   in.GetMonitoringInstance().GetInstanceId(),
-					"instance_name": in.GetMonitoringInstance().GetInstanceName(),
-					"instance_type": in.GetMonitoringInstance().GetInstanceType(),
-				},
-			},
-		}
-		s.logger.Debug("adding message to list", "message", hb)
-
-		// send to alertmanager at the end
-		if err := s.send([]*models.PostableAlert{hb}); err != nil {
-			s.logger.Error("error during send", "error", err)
-		}
-	}
-}
-
-func (s *spogServiceSyncServer) send(list []*models.PostableAlert) error {
-	if len(list) > 0 {
-		buf := new(bytes.Buffer)
-		enc := json.NewEncoder(buf)
-		if err := enc.Encode(&list); err != nil {
-			return err
-		}
-
-		resp, err := s.client.Post(fmt.Sprintf("%s://%s/api/v2/alerts", s.alertmanager.Scheme, s.alertmanager.Host), "application/json", buf)
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("bad status code from alertmanager: %d", resp.StatusCode)
-		}
-
-		s.logger.Info("sent payload to alertmanager", "url", s.alertmanager.String(), "count", len(list), "status", resp.Status)
-	}
-
-	return nil
-}
-
-func inmap(k string, m map[string]string) string {
-	if v, ok := m[k]; ok {
-		return v
-	}
-
-	return ""
 }
