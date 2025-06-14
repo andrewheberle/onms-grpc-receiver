@@ -14,8 +14,7 @@ This is an experiment that acts as a receiver for the [OpenNMS gRPC Exporter](ht
 | --debug               | Enable debug logging                                       |                |
 | --headers             | Custom headers                                             |                |
 | --key                 | TLS Key                                                    |                |
-| --map.site            | Map instance ID's to sites                                 |                |
-| --map.url             | Map instance ID's to URLs                                  |                |
+| --map.url             | Map Horizon instance ID's to URLs                          |                |
 | --silent              | Disable all logging                                        |                |
 
 ## Alertmanager Integration
