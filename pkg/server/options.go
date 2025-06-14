@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -47,7 +48,7 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 
 			list := make([]string, 0)
 			for _, am := range ams {
-				list = append(list, fmt.Sprintf("%s://%s:%d/api/v2/alerts", scheme, am.Target, am.Port))
+				list = append(list, fmt.Sprintf("%s://%s/api/v2/alerts", scheme, net.JoinHostPort(am.Target, fmt.Sprint(am.Port))))
 			}
 
 			return list, nil
