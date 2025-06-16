@@ -12,7 +12,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 
 | Flag                  | Decription                                                 | Default        |
 |-----------------------|------------------------------------------------------------|----------------|
-| --address             | Service listen address                                     | localhost:8080 |
+| --address             | Service gRPC listen address                                | localhost:8080 |
 | --alertmanager.scheme | Alertmanager scheme (http/https) when SRV records are used | http           |
 | --alertmanager.srv    | Alertmanager SRV Record                                    |                |
 | --alertmanager.url    | Alertmanager URL                                           |                |
@@ -21,6 +21,8 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 | --headers             | Custom headers                                             |                |
 | --key                 | TLS Key                                                    |                |
 | --map.url             | Map Horizon instance ID's to URLs                          |                |
+| --metrics.address     | Metrics listen address                                     |                |
+| --metrics.path        | Metrics path                                               | /metrics       |
 | --silent              | Disable all logging                                        |                |
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
@@ -78,4 +80,8 @@ onms-grpc-receiver spog --map.url "uuid-of-horizon-instance=http://horizon:8980/
 
 Based on the above an alert from `uuid-of-horizon-instance` with an alert ID `25` would result in a URL of `http://horizon:8980/opennms/alarm/detail.htm?id=25`
 
+## Metrics
 
+Prometheus metrics are exposed on the `/metrics` path (by default) when the `--metrics.address` flag is provided.
+
+Enabling metrics also enables a health check endpoint at `/-/health` that responds with `200 OK`.

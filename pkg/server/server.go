@@ -16,6 +16,7 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -32,6 +33,8 @@ type ServiceSyncServer struct {
 	// metrics
 	alertmanagerTotal  *prometheus.CounterVec
 	alertmanagerErrors *prometheus.CounterVec
+	alarmTotal         *prometheus.CounterVec
+	heartbeatTotal     *prometheus.CounterVec
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
@@ -59,24 +62,42 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		}
 	}
 
+	// set up metrics
 	s.alertmanagerTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "onmsgrpc_alertmanager_total",
 		Help: "Total number of messages sent to alertmanager.",
 	},
 		[]string{"alertmanager"})
-	s.registry.MustRegister(s.alertmanagerTotal)
 	s.alertmanagerErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "onmsgrpc_alertmanager_failed_total",
 		Help: "Total number of messages that could not be sent to alertmanager.",
 	},
 		[]string{"alertmanager"})
-	s.registry.MustRegister(s.alertmanagerErrors)
+	s.alarmTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "onmsgrpc_alarm_total",
+		Help: "Total number of alarms seen from a Horizon instance.",
+	},
+		[]string{"instance_id"})
+	s.heartbeatTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "onmsgrpc_heartbeat_total",
+		Help: "Total number of heartbeat updates seen from a Horizon instance.",
+	},
+		[]string{"instance_id"})
+
+	// register metrics
+	s.registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		s.alertmanagerTotal, s.alertmanagerErrors,
+	)
 
 	return s, nil
 }
 
 func (s *ServiceSyncServer) MetricsHandler() http.Handler {
-	return promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{})
+	return promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{
+		Registry: s.registry,
+	})
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
@@ -88,6 +109,9 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		if err != nil {
 			return err
 		}
+
+		// add number of alarms to counter
+		s.alarmTotal.WithLabelValues(in.GetInstanceId()).Add(float64(len(in.GetAlarms())))
 
 		logger := s.logger.With("id", in.GetInstanceId(),
 			"name", in.GetInstanceName(),
@@ -198,6 +222,9 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 		if err != nil {
 			return err
 		}
+
+		// increment heartbeat counter
+		s.heartbeatTotal.WithLabelValues(in.GetMonitoringInstance().GetInstanceId()).Inc()
 
 		// print message
 		s.logger.Info(in.GetMessage(),

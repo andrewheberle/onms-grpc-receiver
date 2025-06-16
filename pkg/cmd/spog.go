@@ -175,6 +175,10 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	// set up metrics
 	if c.metricsAddress != "" {
 		mux := http.NewServeMux()
+		mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Healthy"))
+		})
 		mux.Handle(c.metricsPath, c.srv.MetricsHandler())
 
 		srv := &http.Server{
@@ -187,6 +191,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 			srv.TLSConfig = tlsConfig
 			g.Add(func() error {
 				// run tls server
+				c.logger.Info("started metrics service", "address", c.metricsAddress, "path", c.metricsPath, "cert", c.cert, "key", c.key)
 				return srv.ListenAndServeTLS("", "")
 			}, func(err error) {
 				go func() {
@@ -198,6 +203,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 		} else {
 			g.Add(func() error {
 				// run non tls server
+				c.logger.Info("started metrics service", "address", c.metricsAddress, "path", c.metricsPath)
 				return srv.ListenAndServe()
 			}, func(err error) {
 				go func() {
