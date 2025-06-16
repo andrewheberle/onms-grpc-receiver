@@ -2,6 +2,12 @@
 
 This is an experiment that acts as a receiver for the [OpenNMS gRPC Exporter](https://docs.opennms.com/horizon/33/operation/deep-dive/grpc-exporter/grpc-exporter.html).
 
+## Running via Docker
+
+```sh
+docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertmanager.url http://am:9092
+```
+
 ## Command Line Options
 
 | Flag                  | Decription                                                 | Default        |
@@ -27,7 +33,7 @@ onms-grpc-receiver spog
 
 ## Alertmanager Integration
 
-There is a basic implementation of sending data to an upstream Alertmanager instance.
+There is a basic implementation of sending data to an upstream Alertmanager instance/cluster.
 
 This process sends a batch of alerts as they come in.
 
