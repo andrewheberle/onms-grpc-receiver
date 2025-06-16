@@ -15,6 +15,8 @@ import (
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/go-openapi/strfmt"
 	"github.com/prometheus/alertmanager/api/v2/models"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -25,6 +27,11 @@ type ServiceSyncServer struct {
 	httpClient    *http.Client
 	urlMap        map[string]string
 	dnsClient     *net.Resolver
+	registry      *prometheus.Registry
+
+	// metrics
+	alertmanagerTotal  *prometheus.CounterVec
+	alertmanagerErrors *prometheus.CounterVec
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
@@ -43,13 +50,33 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	// set up dns client
 	s.dnsClient = new(net.Resolver)
 
+	// ensure registry is non-nil
+	s.registry = prometheus.NewRegistry()
+
 	for _, o := range opts {
 		if err := o(s); err != nil {
 			return nil, fmt.Errorf("error applying option: %w", err)
 		}
 	}
 
+	s.alertmanagerTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "onmsgrpc_alertmanager_total",
+		Help: "Total number of messages sent to alertmanager.",
+	},
+		[]string{"alertmanager"})
+	s.registry.MustRegister(s.alertmanagerTotal)
+	s.alertmanagerErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "onmsgrpc_alertmanager_failed_total",
+		Help: "Total number of messages that could not be sent to alertmanager.",
+	},
+		[]string{"alertmanager"})
+	s.registry.MustRegister(s.alertmanagerErrors)
+
 	return s, nil
+}
+
+func (s *ServiceSyncServer) MetricsHandler() http.Handler {
+	return promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{})
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
@@ -226,6 +253,8 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 		return func() error {
 			logger := s.logger.With("count", len(list))
 			for _, am := range ams {
+				s.alertmanagerTotal.WithLabelValues(am).Inc()
+
 				// create new buffer from JSON payload
 				buf := bytes.NewReader(payload)
 
@@ -233,12 +262,14 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 				resp, err := s.httpClient.Post(am, "application/json", buf)
 				if err != nil {
 					logger.Warn("error sending to alertmanager", "url", am, "status", resp.Status, "error", err)
+					s.alertmanagerErrors.WithLabelValues(am).Inc()
 					continue
 				}
 
 				// check status code
 				if resp.StatusCode != http.StatusOK {
 					logger.Warn("bad status code from alertmanager", "url", am, "status", resp.Status)
+					s.alertmanagerErrors.WithLabelValues(am).Inc()
 					continue
 				}
 
