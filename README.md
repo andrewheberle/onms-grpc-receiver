@@ -84,4 +84,4 @@ Based on the above an alert from `uuid-of-horizon-instance` with an alert ID `25
 
 Prometheus metrics are exposed on the `/metrics` path (by default) when the `--metrics.address` flag is provided.
 
-Enabling metrics also enables a health check endpoint at `/-/health` that responds with `200 OK`.
+Enabling metrics also enables a health check endpoint at `/-/healthy` that responds with `200 OK`.
