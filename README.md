@@ -17,11 +17,33 @@ This is an experiment that acts as a receiver for the [OpenNMS gRPC Exporter](ht
 | --map.url             | Map Horizon instance ID's to URLs                          |                |
 | --silent              | Disable all logging                                        |                |
 
+All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
+
+```sh
+export ONMS_GRPC_DEBUG="true"
+export ONMS_GRPC_ALERTMANAGER_URL="http://am-0:9091,http://am-1:9091"
+onms-grpc-receiver spog
+```
+
 ## Alertmanager Integration
 
 There is a basic implementation of sending data to an upstream Alertmanager instance.
 
 This process sends a batch of alerts as they come in.
+
+You may either specify via one or more `--alertmanager.url` as follows:
+
+```sh
+onms-grpc-receiver spog --alertmanager.url http://am-0:9091 --alertmanager.url http://am-1:9091 
+```
+
+Or you may use SRV recork lookups using the `--alertmanager.srv` and optionally `--alertmanager.scheme` as follows
+
+```sh
+onms-grpc-receiver spog --alertmanager.srv _http.alertmanager --alertmanager.scheme http
+```
+
+The above options are mutually exclusive, in addition only basic validation of provided URLs is done, not that any Alertmanager is reachable on startup.
 
 ### Alert Names and Labels
 

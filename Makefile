@@ -1,7 +1,7 @@
-bsm/bsm.pb.go: proto/bsm.proto
+bsm/bsm.pb.go: proto/monitored-services.proto
 	protoc --proto_path=proto --go_out=pkg/bsm --go_opt=default_api_level=API_OPAQUE --go_opt=paths=source_relative --go_opt=Mmonitored-services.proto=github.com/andrewheberle/onms-grpc-receiver/pkg/bsm monitored-services.proto
 
-bsm/bsm_grpc.pb.go: proto/bsm.proto
+bsm/bsm_grpc.pb.go: proto/monitored-services.proto
 	protoc --proto_path=proto --go-grpc_out=pkg/bsm --go-grpc_opt=paths=source_relative --go-grpc_opt=Mmonitored-services.proto=github.com/andrewheberle/onms-grpc-receiver/pkg/bsm monitored-services.proto
 
 spog/spog.pb.go: proto/spog.proto

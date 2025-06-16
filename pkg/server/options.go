@@ -10,33 +10,52 @@ import (
 	"time"
 )
 
-type ServiceSyncServerOption func(*ServiceSyncServer)
+type ServiceSyncServerOption func(*ServiceSyncServer) error
 
 func WithLogger(logger *slog.Logger) ServiceSyncServerOption {
-	return func(s *ServiceSyncServer) {
+	return func(s *ServiceSyncServer) error {
 		s.logger = logger
+
+		return nil
 	}
 }
 
 func WithHeaders(headers map[string]string) ServiceSyncServerOption {
-	return func(s *ServiceSyncServer) {
+	return func(s *ServiceSyncServer) error {
 		s.httpClient.Transport = &customTransport{
 			Headers: headers,
 		}
+
+		return nil
 	}
 }
 
-func WithAlertmanagerUrl(u *url.URL) ServiceSyncServerOption {
-	return func(s *ServiceSyncServer) {
-		u.Path = "/api/v2/alerts"
-		s.alertmanagers = func() ([]string, error) {
-			return []string{u.String()}, nil
+func WithAlertmanagerUrl(list []string) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		for n, v := range list {
+			// add path to url
+			joined, err := url.JoinPath(v, "/api/v2/alerts")
+			if err != nil {
+				return err
+			}
+
+			// validate
+			if _, err := url.Parse(joined); err != nil {
+				return err
+			}
+			list[n] = joined
 		}
+
+		s.alertmanagers = func() ([]string, error) {
+			return list, nil
+		}
+
+		return nil
 	}
 }
 
 func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
-	return func(s *ServiceSyncServer) {
+	return func(s *ServiceSyncServer) error {
 		s.alertmanagers = func() ([]string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 			defer cancel()
@@ -53,12 +72,16 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 
 			return list, nil
 		}
+
+		return nil
 	}
 }
 
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
-	return func(s *ServiceSyncServer) {
+	return func(s *ServiceSyncServer) error {
 		s.urlMap = m
+
+		return nil
 	}
 }
 

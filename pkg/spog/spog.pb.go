@@ -32,7 +32,6 @@ import (
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
-	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -99,11 +98,6 @@ func (x Severity) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use Severity.Descriptor instead.
-func (Severity) EnumDescriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{0}
-}
-
 type Alarm_Type int32
 
 const (
@@ -148,20 +142,15 @@ func (x Alarm_Type) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use Alarm_Type.Descriptor instead.
-func (Alarm_Type) EnumDescriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{4, 0}
-}
-
 type NodeCriteria struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	ForeignSource string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3" json:"foreign_source,omitempty"`
-	ForeignId     string                 `protobuf:"bytes,3,opt,name=foreign_id,json=foreignId,proto3" json:"foreign_id,omitempty"`
-	NodeLabel     string                 `protobuf:"bytes,4,opt,name=node_label,json=nodeLabel,proto3" json:"node_label,omitempty"`
-	Location      string                 `protobuf:"bytes,5,opt,name=location,proto3" json:"location,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3"`
+	xxx_hidden_ForeignSource string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3"`
+	xxx_hidden_ForeignId     string                 `protobuf:"bytes,3,opt,name=foreign_id,json=foreignId,proto3"`
+	xxx_hidden_NodeLabel     string                 `protobuf:"bytes,4,opt,name=node_label,json=nodeLabel,proto3"`
+	xxx_hidden_Location      string                 `protobuf:"bytes,5,opt,name=location,proto3"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *NodeCriteria) Reset() {
@@ -189,54 +178,91 @@ func (x *NodeCriteria) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use NodeCriteria.ProtoReflect.Descriptor instead.
-func (*NodeCriteria) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{0}
-}
-
 func (x *NodeCriteria) GetId() uint64 {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return 0
 }
 
 func (x *NodeCriteria) GetForeignSource() string {
 	if x != nil {
-		return x.ForeignSource
+		return x.xxx_hidden_ForeignSource
 	}
 	return ""
 }
 
 func (x *NodeCriteria) GetForeignId() string {
 	if x != nil {
-		return x.ForeignId
+		return x.xxx_hidden_ForeignId
 	}
 	return ""
 }
 
 func (x *NodeCriteria) GetNodeLabel() string {
 	if x != nil {
-		return x.NodeLabel
+		return x.xxx_hidden_NodeLabel
 	}
 	return ""
 }
 
 func (x *NodeCriteria) GetLocation() string {
 	if x != nil {
-		return x.Location
+		return x.xxx_hidden_Location
 	}
 	return ""
 }
 
+func (x *NodeCriteria) SetId(v uint64) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *NodeCriteria) SetForeignSource(v string) {
+	x.xxx_hidden_ForeignSource = v
+}
+
+func (x *NodeCriteria) SetForeignId(v string) {
+	x.xxx_hidden_ForeignId = v
+}
+
+func (x *NodeCriteria) SetNodeLabel(v string) {
+	x.xxx_hidden_NodeLabel = v
+}
+
+func (x *NodeCriteria) SetLocation(v string) {
+	x.xxx_hidden_Location = v
+}
+
+type NodeCriteria_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id            uint64
+	ForeignSource string
+	ForeignId     string
+	NodeLabel     string
+	Location      string
+}
+
+func (b0 NodeCriteria_builder) Build() *NodeCriteria {
+	m0 := &NodeCriteria{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_ForeignSource = b.ForeignSource
+	x.xxx_hidden_ForeignId = b.ForeignId
+	x.xxx_hidden_NodeLabel = b.NodeLabel
+	x.xxx_hidden_Location = b.Location
+	return m0
+}
+
 type IpInterface struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	IpAddress     string                 `protobuf:"bytes,2,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
-	PrimaryType   string                 `protobuf:"bytes,3,opt,name=primary_type,json=primaryType,proto3" json:"primary_type,omitempty"`
-	Service       []string               `protobuf:"bytes,4,rep,name=service,proto3" json:"service,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id          uint64                 `protobuf:"varint,1,opt,name=id,proto3"`
+	xxx_hidden_IpAddress   string                 `protobuf:"bytes,2,opt,name=ip_address,json=ipAddress,proto3"`
+	xxx_hidden_PrimaryType string                 `protobuf:"bytes,3,opt,name=primary_type,json=primaryType,proto3"`
+	xxx_hidden_Service     []string               `protobuf:"bytes,4,rep,name=service,proto3"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *IpInterface) Reset() {
@@ -264,53 +290,84 @@ func (x *IpInterface) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IpInterface.ProtoReflect.Descriptor instead.
-func (*IpInterface) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{1}
-}
-
 func (x *IpInterface) GetId() uint64 {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return 0
 }
 
 func (x *IpInterface) GetIpAddress() string {
 	if x != nil {
-		return x.IpAddress
+		return x.xxx_hidden_IpAddress
 	}
 	return ""
 }
 
 func (x *IpInterface) GetPrimaryType() string {
 	if x != nil {
-		return x.PrimaryType
+		return x.xxx_hidden_PrimaryType
 	}
 	return ""
 }
 
 func (x *IpInterface) GetService() []string {
 	if x != nil {
-		return x.Service
+		return x.xxx_hidden_Service
 	}
 	return nil
 }
 
+func (x *IpInterface) SetId(v uint64) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *IpInterface) SetIpAddress(v string) {
+	x.xxx_hidden_IpAddress = v
+}
+
+func (x *IpInterface) SetPrimaryType(v string) {
+	x.xxx_hidden_PrimaryType = v
+}
+
+func (x *IpInterface) SetService(v []string) {
+	x.xxx_hidden_Service = v
+}
+
+type IpInterface_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id          uint64
+	IpAddress   string
+	PrimaryType string
+	Service     []string
+}
+
+func (b0 IpInterface_builder) Build() *IpInterface {
+	m0 := &IpInterface{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_IpAddress = b.IpAddress
+	x.xxx_hidden_PrimaryType = b.PrimaryType
+	x.xxx_hidden_Service = b.Service
+	return m0
+}
+
 type SnmpInterface struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	IfIndex       uint32                 `protobuf:"varint,2,opt,name=if_index,json=ifIndex,proto3" json:"if_index,omitempty"`
-	IfDescr       string                 `protobuf:"bytes,3,opt,name=if_descr,json=ifDescr,proto3" json:"if_descr,omitempty"`
-	IfType        uint32                 `protobuf:"varint,4,opt,name=if_type,json=ifType,proto3" json:"if_type,omitempty"`
-	IfName        string                 `protobuf:"bytes,5,opt,name=if_name,json=ifName,proto3" json:"if_name,omitempty"`
-	IfSpeed       uint64                 `protobuf:"varint,6,opt,name=if_speed,json=ifSpeed,proto3" json:"if_speed,omitempty"`
-	IfPhysAddress string                 `protobuf:"bytes,7,opt,name=if_phys_address,json=ifPhysAddress,proto3" json:"if_phys_address,omitempty"`
-	IfAdminStatus uint32                 `protobuf:"varint,8,opt,name=if_admin_status,json=ifAdminStatus,proto3" json:"if_admin_status,omitempty"`
-	IfOperStatus  uint32                 `protobuf:"varint,9,opt,name=if_oper_status,json=ifOperStatus,proto3" json:"if_oper_status,omitempty"`
-	IfAlias       string                 `protobuf:"bytes,10,opt,name=if_alias,json=ifAlias,proto3" json:"if_alias,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3"`
+	xxx_hidden_IfIndex       uint32                 `protobuf:"varint,2,opt,name=if_index,json=ifIndex,proto3"`
+	xxx_hidden_IfDescr       string                 `protobuf:"bytes,3,opt,name=if_descr,json=ifDescr,proto3"`
+	xxx_hidden_IfType        uint32                 `protobuf:"varint,4,opt,name=if_type,json=ifType,proto3"`
+	xxx_hidden_IfName        string                 `protobuf:"bytes,5,opt,name=if_name,json=ifName,proto3"`
+	xxx_hidden_IfSpeed       uint64                 `protobuf:"varint,6,opt,name=if_speed,json=ifSpeed,proto3"`
+	xxx_hidden_IfPhysAddress string                 `protobuf:"bytes,7,opt,name=if_phys_address,json=ifPhysAddress,proto3"`
+	xxx_hidden_IfAdminStatus uint32                 `protobuf:"varint,8,opt,name=if_admin_status,json=ifAdminStatus,proto3"`
+	xxx_hidden_IfOperStatus  uint32                 `protobuf:"varint,9,opt,name=if_oper_status,json=ifOperStatus,proto3"`
+	xxx_hidden_IfAlias       string                 `protobuf:"bytes,10,opt,name=if_alias,json=ifAlias,proto3"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *SnmpInterface) Reset() {
@@ -338,98 +395,165 @@ func (x *SnmpInterface) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SnmpInterface.ProtoReflect.Descriptor instead.
-func (*SnmpInterface) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{2}
-}
-
 func (x *SnmpInterface) GetId() uint64 {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return 0
 }
 
 func (x *SnmpInterface) GetIfIndex() uint32 {
 	if x != nil {
-		return x.IfIndex
+		return x.xxx_hidden_IfIndex
 	}
 	return 0
 }
 
 func (x *SnmpInterface) GetIfDescr() string {
 	if x != nil {
-		return x.IfDescr
+		return x.xxx_hidden_IfDescr
 	}
 	return ""
 }
 
 func (x *SnmpInterface) GetIfType() uint32 {
 	if x != nil {
-		return x.IfType
+		return x.xxx_hidden_IfType
 	}
 	return 0
 }
 
 func (x *SnmpInterface) GetIfName() string {
 	if x != nil {
-		return x.IfName
+		return x.xxx_hidden_IfName
 	}
 	return ""
 }
 
 func (x *SnmpInterface) GetIfSpeed() uint64 {
 	if x != nil {
-		return x.IfSpeed
+		return x.xxx_hidden_IfSpeed
 	}
 	return 0
 }
 
 func (x *SnmpInterface) GetIfPhysAddress() string {
 	if x != nil {
-		return x.IfPhysAddress
+		return x.xxx_hidden_IfPhysAddress
 	}
 	return ""
 }
 
 func (x *SnmpInterface) GetIfAdminStatus() uint32 {
 	if x != nil {
-		return x.IfAdminStatus
+		return x.xxx_hidden_IfAdminStatus
 	}
 	return 0
 }
 
 func (x *SnmpInterface) GetIfOperStatus() uint32 {
 	if x != nil {
-		return x.IfOperStatus
+		return x.xxx_hidden_IfOperStatus
 	}
 	return 0
 }
 
 func (x *SnmpInterface) GetIfAlias() string {
 	if x != nil {
-		return x.IfAlias
+		return x.xxx_hidden_IfAlias
 	}
 	return ""
 }
 
+func (x *SnmpInterface) SetId(v uint64) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *SnmpInterface) SetIfIndex(v uint32) {
+	x.xxx_hidden_IfIndex = v
+}
+
+func (x *SnmpInterface) SetIfDescr(v string) {
+	x.xxx_hidden_IfDescr = v
+}
+
+func (x *SnmpInterface) SetIfType(v uint32) {
+	x.xxx_hidden_IfType = v
+}
+
+func (x *SnmpInterface) SetIfName(v string) {
+	x.xxx_hidden_IfName = v
+}
+
+func (x *SnmpInterface) SetIfSpeed(v uint64) {
+	x.xxx_hidden_IfSpeed = v
+}
+
+func (x *SnmpInterface) SetIfPhysAddress(v string) {
+	x.xxx_hidden_IfPhysAddress = v
+}
+
+func (x *SnmpInterface) SetIfAdminStatus(v uint32) {
+	x.xxx_hidden_IfAdminStatus = v
+}
+
+func (x *SnmpInterface) SetIfOperStatus(v uint32) {
+	x.xxx_hidden_IfOperStatus = v
+}
+
+func (x *SnmpInterface) SetIfAlias(v string) {
+	x.xxx_hidden_IfAlias = v
+}
+
+type SnmpInterface_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id            uint64
+	IfIndex       uint32
+	IfDescr       string
+	IfType        uint32
+	IfName        string
+	IfSpeed       uint64
+	IfPhysAddress string
+	IfAdminStatus uint32
+	IfOperStatus  uint32
+	IfAlias       string
+}
+
+func (b0 SnmpInterface_builder) Build() *SnmpInterface {
+	m0 := &SnmpInterface{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_IfIndex = b.IfIndex
+	x.xxx_hidden_IfDescr = b.IfDescr
+	x.xxx_hidden_IfType = b.IfType
+	x.xxx_hidden_IfName = b.IfName
+	x.xxx_hidden_IfSpeed = b.IfSpeed
+	x.xxx_hidden_IfPhysAddress = b.IfPhysAddress
+	x.xxx_hidden_IfAdminStatus = b.IfAdminStatus
+	x.xxx_hidden_IfOperStatus = b.IfOperStatus
+	x.xxx_hidden_IfAlias = b.IfAlias
+	return m0
+}
+
 type Node struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	ForeignSource  string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3" json:"foreign_source,omitempty"`
-	ForeignId      string                 `protobuf:"bytes,3,opt,name=foreign_id,json=foreignId,proto3" json:"foreign_id,omitempty"`
-	Location       string                 `protobuf:"bytes,4,opt,name=location,proto3" json:"location,omitempty"`
-	Category       []string               `protobuf:"bytes,5,rep,name=category,proto3" json:"category,omitempty"`
-	Label          string                 `protobuf:"bytes,6,opt,name=label,proto3" json:"label,omitempty"`
-	CreateTime     uint64                 `protobuf:"varint,7,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
-	SysContact     string                 `protobuf:"bytes,8,opt,name=sys_contact,json=sysContact,proto3" json:"sys_contact,omitempty"`
-	SysDescription string                 `protobuf:"bytes,9,opt,name=sys_description,json=sysDescription,proto3" json:"sys_description,omitempty"`
-	SysObjectId    string                 `protobuf:"bytes,10,opt,name=sys_object_id,json=sysObjectId,proto3" json:"sys_object_id,omitempty"`
-	SysName        string                 `protobuf:"bytes,11,opt,name=sys_name,json=sysName,proto3" json:"sys_name,omitempty"`
-	IpInterface    []*IpInterface         `protobuf:"bytes,12,rep,name=ip_interface,json=ipInterface,proto3" json:"ip_interface,omitempty"`
-	SnmpInterface  []*SnmpInterface       `protobuf:"bytes,13,rep,name=snmp_interface,json=snmpInterface,proto3" json:"snmp_interface,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id             uint64                 `protobuf:"varint,1,opt,name=id,proto3"`
+	xxx_hidden_ForeignSource  string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3"`
+	xxx_hidden_ForeignId      string                 `protobuf:"bytes,3,opt,name=foreign_id,json=foreignId,proto3"`
+	xxx_hidden_Location       string                 `protobuf:"bytes,4,opt,name=location,proto3"`
+	xxx_hidden_Category       []string               `protobuf:"bytes,5,rep,name=category,proto3"`
+	xxx_hidden_Label          string                 `protobuf:"bytes,6,opt,name=label,proto3"`
+	xxx_hidden_CreateTime     uint64                 `protobuf:"varint,7,opt,name=create_time,json=createTime,proto3"`
+	xxx_hidden_SysContact     string                 `protobuf:"bytes,8,opt,name=sys_contact,json=sysContact,proto3"`
+	xxx_hidden_SysDescription string                 `protobuf:"bytes,9,opt,name=sys_description,json=sysDescription,proto3"`
+	xxx_hidden_SysObjectId    string                 `protobuf:"bytes,10,opt,name=sys_object_id,json=sysObjectId,proto3"`
+	xxx_hidden_SysName        string                 `protobuf:"bytes,11,opt,name=sys_name,json=sysName,proto3"`
+	xxx_hidden_IpInterface    *[]*IpInterface        `protobuf:"bytes,12,rep,name=ip_interface,json=ipInterface,proto3"`
+	xxx_hidden_SnmpInterface  *[]*SnmpInterface      `protobuf:"bytes,13,rep,name=snmp_interface,json=snmpInterface,proto3"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *Node) Reset() {
@@ -457,128 +581,217 @@ func (x *Node) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Node.ProtoReflect.Descriptor instead.
-func (*Node) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{3}
-}
-
 func (x *Node) GetId() uint64 {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return 0
 }
 
 func (x *Node) GetForeignSource() string {
 	if x != nil {
-		return x.ForeignSource
+		return x.xxx_hidden_ForeignSource
 	}
 	return ""
 }
 
 func (x *Node) GetForeignId() string {
 	if x != nil {
-		return x.ForeignId
+		return x.xxx_hidden_ForeignId
 	}
 	return ""
 }
 
 func (x *Node) GetLocation() string {
 	if x != nil {
-		return x.Location
+		return x.xxx_hidden_Location
 	}
 	return ""
 }
 
 func (x *Node) GetCategory() []string {
 	if x != nil {
-		return x.Category
+		return x.xxx_hidden_Category
 	}
 	return nil
 }
 
 func (x *Node) GetLabel() string {
 	if x != nil {
-		return x.Label
+		return x.xxx_hidden_Label
 	}
 	return ""
 }
 
 func (x *Node) GetCreateTime() uint64 {
 	if x != nil {
-		return x.CreateTime
+		return x.xxx_hidden_CreateTime
 	}
 	return 0
 }
 
 func (x *Node) GetSysContact() string {
 	if x != nil {
-		return x.SysContact
+		return x.xxx_hidden_SysContact
 	}
 	return ""
 }
 
 func (x *Node) GetSysDescription() string {
 	if x != nil {
-		return x.SysDescription
+		return x.xxx_hidden_SysDescription
 	}
 	return ""
 }
 
 func (x *Node) GetSysObjectId() string {
 	if x != nil {
-		return x.SysObjectId
+		return x.xxx_hidden_SysObjectId
 	}
 	return ""
 }
 
 func (x *Node) GetSysName() string {
 	if x != nil {
-		return x.SysName
+		return x.xxx_hidden_SysName
 	}
 	return ""
 }
 
 func (x *Node) GetIpInterface() []*IpInterface {
 	if x != nil {
-		return x.IpInterface
+		if x.xxx_hidden_IpInterface != nil {
+			return *x.xxx_hidden_IpInterface
+		}
 	}
 	return nil
 }
 
 func (x *Node) GetSnmpInterface() []*SnmpInterface {
 	if x != nil {
-		return x.SnmpInterface
+		if x.xxx_hidden_SnmpInterface != nil {
+			return *x.xxx_hidden_SnmpInterface
+		}
 	}
 	return nil
 }
 
+func (x *Node) SetId(v uint64) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *Node) SetForeignSource(v string) {
+	x.xxx_hidden_ForeignSource = v
+}
+
+func (x *Node) SetForeignId(v string) {
+	x.xxx_hidden_ForeignId = v
+}
+
+func (x *Node) SetLocation(v string) {
+	x.xxx_hidden_Location = v
+}
+
+func (x *Node) SetCategory(v []string) {
+	x.xxx_hidden_Category = v
+}
+
+func (x *Node) SetLabel(v string) {
+	x.xxx_hidden_Label = v
+}
+
+func (x *Node) SetCreateTime(v uint64) {
+	x.xxx_hidden_CreateTime = v
+}
+
+func (x *Node) SetSysContact(v string) {
+	x.xxx_hidden_SysContact = v
+}
+
+func (x *Node) SetSysDescription(v string) {
+	x.xxx_hidden_SysDescription = v
+}
+
+func (x *Node) SetSysObjectId(v string) {
+	x.xxx_hidden_SysObjectId = v
+}
+
+func (x *Node) SetSysName(v string) {
+	x.xxx_hidden_SysName = v
+}
+
+func (x *Node) SetIpInterface(v []*IpInterface) {
+	x.xxx_hidden_IpInterface = &v
+}
+
+func (x *Node) SetSnmpInterface(v []*SnmpInterface) {
+	x.xxx_hidden_SnmpInterface = &v
+}
+
+type Node_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id             uint64
+	ForeignSource  string
+	ForeignId      string
+	Location       string
+	Category       []string
+	Label          string
+	CreateTime     uint64
+	SysContact     string
+	SysDescription string
+	SysObjectId    string
+	SysName        string
+	IpInterface    []*IpInterface
+	SnmpInterface  []*SnmpInterface
+}
+
+func (b0 Node_builder) Build() *Node {
+	m0 := &Node{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_ForeignSource = b.ForeignSource
+	x.xxx_hidden_ForeignId = b.ForeignId
+	x.xxx_hidden_Location = b.Location
+	x.xxx_hidden_Category = b.Category
+	x.xxx_hidden_Label = b.Label
+	x.xxx_hidden_CreateTime = b.CreateTime
+	x.xxx_hidden_SysContact = b.SysContact
+	x.xxx_hidden_SysDescription = b.SysDescription
+	x.xxx_hidden_SysObjectId = b.SysObjectId
+	x.xxx_hidden_SysName = b.SysName
+	x.xxx_hidden_IpInterface = &b.IpInterface
+	x.xxx_hidden_SnmpInterface = &b.SnmpInterface
+	return m0
+}
+
 type Alarm struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Id                    uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Uei                   string                 `protobuf:"bytes,2,opt,name=uei,proto3" json:"uei,omitempty"`
-	NodeCriteria          *NodeCriteria          `protobuf:"bytes,3,opt,name=node_criteria,json=nodeCriteria,proto3" json:"node_criteria,omitempty"`
-	IpAddress             string                 `protobuf:"bytes,4,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
-	ServiceName           string                 `protobuf:"bytes,5,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
-	ReductionKey          string                 `protobuf:"bytes,6,opt,name=reduction_key,json=reductionKey,proto3" json:"reduction_key,omitempty"`
-	Type                  uint32                 `protobuf:"varint,7,opt,name=type,proto3" json:"type,omitempty"`
-	Count                 uint64                 `protobuf:"varint,8,opt,name=count,proto3" json:"count,omitempty"`
-	Severity              uint32                 `protobuf:"varint,9,opt,name=severity,proto3" json:"severity,omitempty"`
-	FirstEventTime        uint64                 `protobuf:"varint,10,opt,name=first_event_time,json=firstEventTime,proto3" json:"first_event_time,omitempty"`
-	Description           string                 `protobuf:"bytes,11,opt,name=description,proto3" json:"description,omitempty"`
-	LogMessage            string                 `protobuf:"bytes,12,opt,name=log_message,json=logMessage,proto3" json:"log_message,omitempty"`
-	AckUser               string                 `protobuf:"bytes,13,opt,name=ack_user,json=ackUser,proto3" json:"ack_user,omitempty"`
-	AckTime               uint64                 `protobuf:"varint,14,opt,name=ack_time,json=ackTime,proto3" json:"ack_time,omitempty"`
-	LastEventTime         uint64                 `protobuf:"varint,16,opt,name=last_event_time,json=lastEventTime,proto3" json:"last_event_time,omitempty"`
-	IfIndex               uint32                 `protobuf:"varint,17,opt,name=if_index,json=ifIndex,proto3" json:"if_index,omitempty"`
-	OperatorInstructions  string                 `protobuf:"bytes,18,opt,name=operator_instructions,json=operatorInstructions,proto3" json:"operator_instructions,omitempty"`
-	ClearKey              string                 `protobuf:"bytes,19,opt,name=clear_key,json=clearKey,proto3" json:"clear_key,omitempty"`
-	ManagedObjectInstance string                 `protobuf:"bytes,20,opt,name=managed_object_instance,json=managedObjectInstance,proto3" json:"managed_object_instance,omitempty"`
-	ManagedObjectType     string                 `protobuf:"bytes,21,opt,name=managed_object_type,json=managedObjectType,proto3" json:"managed_object_type,omitempty"`
-	RelatedAlarm          []*Alarm               `protobuf:"bytes,22,rep,name=relatedAlarm,proto3" json:"relatedAlarm,omitempty"`
-	LastUpdateTime        uint64                 `protobuf:"varint,25,opt,name=last_update_time,json=lastUpdateTime,proto3" json:"last_update_time,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                            protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id                    uint64                 `protobuf:"varint,1,opt,name=id,proto3"`
+	xxx_hidden_Uei                   string                 `protobuf:"bytes,2,opt,name=uei,proto3"`
+	xxx_hidden_NodeCriteria          *NodeCriteria          `protobuf:"bytes,3,opt,name=node_criteria,json=nodeCriteria,proto3"`
+	xxx_hidden_IpAddress             string                 `protobuf:"bytes,4,opt,name=ip_address,json=ipAddress,proto3"`
+	xxx_hidden_ServiceName           string                 `protobuf:"bytes,5,opt,name=service_name,json=serviceName,proto3"`
+	xxx_hidden_ReductionKey          string                 `protobuf:"bytes,6,opt,name=reduction_key,json=reductionKey,proto3"`
+	xxx_hidden_Type                  uint32                 `protobuf:"varint,7,opt,name=type,proto3"`
+	xxx_hidden_Count                 uint64                 `protobuf:"varint,8,opt,name=count,proto3"`
+	xxx_hidden_Severity              uint32                 `protobuf:"varint,9,opt,name=severity,proto3"`
+	xxx_hidden_FirstEventTime        uint64                 `protobuf:"varint,10,opt,name=first_event_time,json=firstEventTime,proto3"`
+	xxx_hidden_Description           string                 `protobuf:"bytes,11,opt,name=description,proto3"`
+	xxx_hidden_LogMessage            string                 `protobuf:"bytes,12,opt,name=log_message,json=logMessage,proto3"`
+	xxx_hidden_AckUser               string                 `protobuf:"bytes,13,opt,name=ack_user,json=ackUser,proto3"`
+	xxx_hidden_AckTime               uint64                 `protobuf:"varint,14,opt,name=ack_time,json=ackTime,proto3"`
+	xxx_hidden_LastEventTime         uint64                 `protobuf:"varint,16,opt,name=last_event_time,json=lastEventTime,proto3"`
+	xxx_hidden_IfIndex               uint32                 `protobuf:"varint,17,opt,name=if_index,json=ifIndex,proto3"`
+	xxx_hidden_OperatorInstructions  string                 `protobuf:"bytes,18,opt,name=operator_instructions,json=operatorInstructions,proto3"`
+	xxx_hidden_ClearKey              string                 `protobuf:"bytes,19,opt,name=clear_key,json=clearKey,proto3"`
+	xxx_hidden_ManagedObjectInstance string                 `protobuf:"bytes,20,opt,name=managed_object_instance,json=managedObjectInstance,proto3"`
+	xxx_hidden_ManagedObjectType     string                 `protobuf:"bytes,21,opt,name=managed_object_type,json=managedObjectType,proto3"`
+	xxx_hidden_RelatedAlarm          *[]*Alarm              `protobuf:"bytes,22,rep,name=relatedAlarm,proto3"`
+	xxx_hidden_LastUpdateTime        uint64                 `protobuf:"varint,25,opt,name=last_update_time,json=lastUpdateTime,proto3"`
+	unknownFields                    protoimpl.UnknownFields
+	sizeCache                        protoimpl.SizeCache
 }
 
 func (x *Alarm) Reset() {
@@ -606,172 +819,324 @@ func (x *Alarm) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Alarm.ProtoReflect.Descriptor instead.
-func (*Alarm) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{4}
-}
-
 func (x *Alarm) GetId() uint64 {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return 0
 }
 
 func (x *Alarm) GetUei() string {
 	if x != nil {
-		return x.Uei
+		return x.xxx_hidden_Uei
 	}
 	return ""
 }
 
 func (x *Alarm) GetNodeCriteria() *NodeCriteria {
 	if x != nil {
-		return x.NodeCriteria
+		return x.xxx_hidden_NodeCriteria
 	}
 	return nil
 }
 
 func (x *Alarm) GetIpAddress() string {
 	if x != nil {
-		return x.IpAddress
+		return x.xxx_hidden_IpAddress
 	}
 	return ""
 }
 
 func (x *Alarm) GetServiceName() string {
 	if x != nil {
-		return x.ServiceName
+		return x.xxx_hidden_ServiceName
 	}
 	return ""
 }
 
 func (x *Alarm) GetReductionKey() string {
 	if x != nil {
-		return x.ReductionKey
+		return x.xxx_hidden_ReductionKey
 	}
 	return ""
 }
 
 func (x *Alarm) GetType() uint32 {
 	if x != nil {
-		return x.Type
+		return x.xxx_hidden_Type
 	}
 	return 0
 }
 
 func (x *Alarm) GetCount() uint64 {
 	if x != nil {
-		return x.Count
+		return x.xxx_hidden_Count
 	}
 	return 0
 }
 
 func (x *Alarm) GetSeverity() uint32 {
 	if x != nil {
-		return x.Severity
+		return x.xxx_hidden_Severity
 	}
 	return 0
 }
 
 func (x *Alarm) GetFirstEventTime() uint64 {
 	if x != nil {
-		return x.FirstEventTime
+		return x.xxx_hidden_FirstEventTime
 	}
 	return 0
 }
 
 func (x *Alarm) GetDescription() string {
 	if x != nil {
-		return x.Description
+		return x.xxx_hidden_Description
 	}
 	return ""
 }
 
 func (x *Alarm) GetLogMessage() string {
 	if x != nil {
-		return x.LogMessage
+		return x.xxx_hidden_LogMessage
 	}
 	return ""
 }
 
 func (x *Alarm) GetAckUser() string {
 	if x != nil {
-		return x.AckUser
+		return x.xxx_hidden_AckUser
 	}
 	return ""
 }
 
 func (x *Alarm) GetAckTime() uint64 {
 	if x != nil {
-		return x.AckTime
+		return x.xxx_hidden_AckTime
 	}
 	return 0
 }
 
 func (x *Alarm) GetLastEventTime() uint64 {
 	if x != nil {
-		return x.LastEventTime
+		return x.xxx_hidden_LastEventTime
 	}
 	return 0
 }
 
 func (x *Alarm) GetIfIndex() uint32 {
 	if x != nil {
-		return x.IfIndex
+		return x.xxx_hidden_IfIndex
 	}
 	return 0
 }
 
 func (x *Alarm) GetOperatorInstructions() string {
 	if x != nil {
-		return x.OperatorInstructions
+		return x.xxx_hidden_OperatorInstructions
 	}
 	return ""
 }
 
 func (x *Alarm) GetClearKey() string {
 	if x != nil {
-		return x.ClearKey
+		return x.xxx_hidden_ClearKey
 	}
 	return ""
 }
 
 func (x *Alarm) GetManagedObjectInstance() string {
 	if x != nil {
-		return x.ManagedObjectInstance
+		return x.xxx_hidden_ManagedObjectInstance
 	}
 	return ""
 }
 
 func (x *Alarm) GetManagedObjectType() string {
 	if x != nil {
-		return x.ManagedObjectType
+		return x.xxx_hidden_ManagedObjectType
 	}
 	return ""
 }
 
 func (x *Alarm) GetRelatedAlarm() []*Alarm {
 	if x != nil {
-		return x.RelatedAlarm
+		if x.xxx_hidden_RelatedAlarm != nil {
+			return *x.xxx_hidden_RelatedAlarm
+		}
 	}
 	return nil
 }
 
 func (x *Alarm) GetLastUpdateTime() uint64 {
 	if x != nil {
-		return x.LastUpdateTime
+		return x.xxx_hidden_LastUpdateTime
 	}
 	return 0
 }
 
+func (x *Alarm) SetId(v uint64) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *Alarm) SetUei(v string) {
+	x.xxx_hidden_Uei = v
+}
+
+func (x *Alarm) SetNodeCriteria(v *NodeCriteria) {
+	x.xxx_hidden_NodeCriteria = v
+}
+
+func (x *Alarm) SetIpAddress(v string) {
+	x.xxx_hidden_IpAddress = v
+}
+
+func (x *Alarm) SetServiceName(v string) {
+	x.xxx_hidden_ServiceName = v
+}
+
+func (x *Alarm) SetReductionKey(v string) {
+	x.xxx_hidden_ReductionKey = v
+}
+
+func (x *Alarm) SetType(v uint32) {
+	x.xxx_hidden_Type = v
+}
+
+func (x *Alarm) SetCount(v uint64) {
+	x.xxx_hidden_Count = v
+}
+
+func (x *Alarm) SetSeverity(v uint32) {
+	x.xxx_hidden_Severity = v
+}
+
+func (x *Alarm) SetFirstEventTime(v uint64) {
+	x.xxx_hidden_FirstEventTime = v
+}
+
+func (x *Alarm) SetDescription(v string) {
+	x.xxx_hidden_Description = v
+}
+
+func (x *Alarm) SetLogMessage(v string) {
+	x.xxx_hidden_LogMessage = v
+}
+
+func (x *Alarm) SetAckUser(v string) {
+	x.xxx_hidden_AckUser = v
+}
+
+func (x *Alarm) SetAckTime(v uint64) {
+	x.xxx_hidden_AckTime = v
+}
+
+func (x *Alarm) SetLastEventTime(v uint64) {
+	x.xxx_hidden_LastEventTime = v
+}
+
+func (x *Alarm) SetIfIndex(v uint32) {
+	x.xxx_hidden_IfIndex = v
+}
+
+func (x *Alarm) SetOperatorInstructions(v string) {
+	x.xxx_hidden_OperatorInstructions = v
+}
+
+func (x *Alarm) SetClearKey(v string) {
+	x.xxx_hidden_ClearKey = v
+}
+
+func (x *Alarm) SetManagedObjectInstance(v string) {
+	x.xxx_hidden_ManagedObjectInstance = v
+}
+
+func (x *Alarm) SetManagedObjectType(v string) {
+	x.xxx_hidden_ManagedObjectType = v
+}
+
+func (x *Alarm) SetRelatedAlarm(v []*Alarm) {
+	x.xxx_hidden_RelatedAlarm = &v
+}
+
+func (x *Alarm) SetLastUpdateTime(v uint64) {
+	x.xxx_hidden_LastUpdateTime = v
+}
+
+func (x *Alarm) HasNodeCriteria() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_NodeCriteria != nil
+}
+
+func (x *Alarm) ClearNodeCriteria() {
+	x.xxx_hidden_NodeCriteria = nil
+}
+
+type Alarm_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id                    uint64
+	Uei                   string
+	NodeCriteria          *NodeCriteria
+	IpAddress             string
+	ServiceName           string
+	ReductionKey          string
+	Type                  uint32
+	Count                 uint64
+	Severity              uint32
+	FirstEventTime        uint64
+	Description           string
+	LogMessage            string
+	AckUser               string
+	AckTime               uint64
+	LastEventTime         uint64
+	IfIndex               uint32
+	OperatorInstructions  string
+	ClearKey              string
+	ManagedObjectInstance string
+	ManagedObjectType     string
+	RelatedAlarm          []*Alarm
+	LastUpdateTime        uint64
+}
+
+func (b0 Alarm_builder) Build() *Alarm {
+	m0 := &Alarm{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_Uei = b.Uei
+	x.xxx_hidden_NodeCriteria = b.NodeCriteria
+	x.xxx_hidden_IpAddress = b.IpAddress
+	x.xxx_hidden_ServiceName = b.ServiceName
+	x.xxx_hidden_ReductionKey = b.ReductionKey
+	x.xxx_hidden_Type = b.Type
+	x.xxx_hidden_Count = b.Count
+	x.xxx_hidden_Severity = b.Severity
+	x.xxx_hidden_FirstEventTime = b.FirstEventTime
+	x.xxx_hidden_Description = b.Description
+	x.xxx_hidden_LogMessage = b.LogMessage
+	x.xxx_hidden_AckUser = b.AckUser
+	x.xxx_hidden_AckTime = b.AckTime
+	x.xxx_hidden_LastEventTime = b.LastEventTime
+	x.xxx_hidden_IfIndex = b.IfIndex
+	x.xxx_hidden_OperatorInstructions = b.OperatorInstructions
+	x.xxx_hidden_ClearKey = b.ClearKey
+	x.xxx_hidden_ManagedObjectInstance = b.ManagedObjectInstance
+	x.xxx_hidden_ManagedObjectType = b.ManagedObjectType
+	x.xxx_hidden_RelatedAlarm = &b.RelatedAlarm
+	x.xxx_hidden_LastUpdateTime = b.LastUpdateTime
+	return m0
+}
+
 type EventParameter struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Name  string                 `protobuf:"bytes,1,opt,name=name,proto3"`
+	xxx_hidden_Value string                 `protobuf:"bytes,2,opt,name=value,proto3"`
+	xxx_hidden_Type  string                 `protobuf:"bytes,3,opt,name=type,proto3"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *EventParameter) Reset() {
@@ -799,42 +1164,67 @@ func (x *EventParameter) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EventParameter.ProtoReflect.Descriptor instead.
-func (*EventParameter) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{5}
-}
-
 func (x *EventParameter) GetName() string {
 	if x != nil {
-		return x.Name
+		return x.xxx_hidden_Name
 	}
 	return ""
 }
 
 func (x *EventParameter) GetValue() string {
 	if x != nil {
-		return x.Value
+		return x.xxx_hidden_Value
 	}
 	return ""
 }
 
 func (x *EventParameter) GetType() string {
 	if x != nil {
-		return x.Type
+		return x.xxx_hidden_Type
 	}
 	return ""
 }
 
+func (x *EventParameter) SetName(v string) {
+	x.xxx_hidden_Name = v
+}
+
+func (x *EventParameter) SetValue(v string) {
+	x.xxx_hidden_Value = v
+}
+
+func (x *EventParameter) SetType(v string) {
+	x.xxx_hidden_Type = v
+}
+
+type EventParameter_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Name  string
+	Value string
+	Type  string
+}
+
+func (b0 EventParameter_builder) Build() *EventParameter {
+	m0 := &EventParameter{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Name = b.Name
+	x.xxx_hidden_Value = b.Value
+	x.xxx_hidden_Type = b.Type
+	return m0
+}
+
 type SnmpInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
-	Specific      uint32                 `protobuf:"varint,3,opt,name=specific,proto3" json:"specific,omitempty"`
-	Generic       uint32                 `protobuf:"varint,4,opt,name=generic,proto3" json:"generic,omitempty"`
-	Community     string                 `protobuf:"bytes,5,opt,name=community,proto3" json:"community,omitempty"`
-	TrapOid       string                 `protobuf:"bytes,6,opt,name=trap_oid,json=trapOid,proto3" json:"trap_oid,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id        string                 `protobuf:"bytes,1,opt,name=id,proto3"`
+	xxx_hidden_Version   string                 `protobuf:"bytes,2,opt,name=version,proto3"`
+	xxx_hidden_Specific  uint32                 `protobuf:"varint,3,opt,name=specific,proto3"`
+	xxx_hidden_Generic   uint32                 `protobuf:"varint,4,opt,name=generic,proto3"`
+	xxx_hidden_Community string                 `protobuf:"bytes,5,opt,name=community,proto3"`
+	xxx_hidden_TrapOid   string                 `protobuf:"bytes,6,opt,name=trap_oid,json=trapOid,proto3"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *SnmpInfo) Reset() {
@@ -862,71 +1252,114 @@ func (x *SnmpInfo) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SnmpInfo.ProtoReflect.Descriptor instead.
-func (*SnmpInfo) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{6}
-}
-
 func (x *SnmpInfo) GetId() string {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return ""
 }
 
 func (x *SnmpInfo) GetVersion() string {
 	if x != nil {
-		return x.Version
+		return x.xxx_hidden_Version
 	}
 	return ""
 }
 
 func (x *SnmpInfo) GetSpecific() uint32 {
 	if x != nil {
-		return x.Specific
+		return x.xxx_hidden_Specific
 	}
 	return 0
 }
 
 func (x *SnmpInfo) GetGeneric() uint32 {
 	if x != nil {
-		return x.Generic
+		return x.xxx_hidden_Generic
 	}
 	return 0
 }
 
 func (x *SnmpInfo) GetCommunity() string {
 	if x != nil {
-		return x.Community
+		return x.xxx_hidden_Community
 	}
 	return ""
 }
 
 func (x *SnmpInfo) GetTrapOid() string {
 	if x != nil {
-		return x.TrapOid
+		return x.xxx_hidden_TrapOid
 	}
 	return ""
 }
 
+func (x *SnmpInfo) SetId(v string) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *SnmpInfo) SetVersion(v string) {
+	x.xxx_hidden_Version = v
+}
+
+func (x *SnmpInfo) SetSpecific(v uint32) {
+	x.xxx_hidden_Specific = v
+}
+
+func (x *SnmpInfo) SetGeneric(v uint32) {
+	x.xxx_hidden_Generic = v
+}
+
+func (x *SnmpInfo) SetCommunity(v string) {
+	x.xxx_hidden_Community = v
+}
+
+func (x *SnmpInfo) SetTrapOid(v string) {
+	x.xxx_hidden_TrapOid = v
+}
+
+type SnmpInfo_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id        string
+	Version   string
+	Specific  uint32
+	Generic   uint32
+	Community string
+	TrapOid   string
+}
+
+func (b0 SnmpInfo_builder) Build() *SnmpInfo {
+	m0 := &SnmpInfo{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_Version = b.Version
+	x.xxx_hidden_Specific = b.Specific
+	x.xxx_hidden_Generic = b.Generic
+	x.xxx_hidden_Community = b.Community
+	x.xxx_hidden_TrapOid = b.TrapOid
+	return m0
+}
+
 type Event struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Uei           string                 `protobuf:"bytes,2,opt,name=uei,proto3" json:"uei,omitempty"`
-	Time          uint64                 `protobuf:"varint,3,opt,name=time,proto3" json:"time,omitempty"`
-	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
-	Parameter     []*EventParameter      `protobuf:"bytes,5,rep,name=parameter,proto3" json:"parameter,omitempty"`
-	CreateTime    uint64                 `protobuf:"varint,6,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
-	Description   string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
-	LogMessage    string                 `protobuf:"bytes,8,opt,name=log_message,json=logMessage,proto3" json:"log_message,omitempty"`
-	Severity      Severity               `protobuf:"varint,9,opt,name=severity,proto3,enum=org.opennms.plugin.grpc.proto.spog.Severity" json:"severity,omitempty"`
-	IpAddress     string                 `protobuf:"bytes,10,opt,name=ip_address,json=ipAddress,proto3" json:"ip_address,omitempty"`
-	DistPoller    string                 `protobuf:"bytes,11,opt,name=dist_poller,json=distPoller,proto3" json:"dist_poller,omitempty"`
-	SnmpInfo      *SnmpInfo              `protobuf:"bytes,12,opt,name=snmpInfo,proto3" json:"snmpInfo,omitempty"`
-	NodeId        uint64                 `protobuf:"varint,13,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Label         string                 `protobuf:"bytes,14,opt,name=label,proto3" json:"label,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id          uint64                 `protobuf:"varint,1,opt,name=id,proto3"`
+	xxx_hidden_Uei         string                 `protobuf:"bytes,2,opt,name=uei,proto3"`
+	xxx_hidden_Time        uint64                 `protobuf:"varint,3,opt,name=time,proto3"`
+	xxx_hidden_Source      string                 `protobuf:"bytes,4,opt,name=source,proto3"`
+	xxx_hidden_Parameter   *[]*EventParameter     `protobuf:"bytes,5,rep,name=parameter,proto3"`
+	xxx_hidden_CreateTime  uint64                 `protobuf:"varint,6,opt,name=create_time,json=createTime,proto3"`
+	xxx_hidden_Description string                 `protobuf:"bytes,7,opt,name=description,proto3"`
+	xxx_hidden_LogMessage  string                 `protobuf:"bytes,8,opt,name=log_message,json=logMessage,proto3"`
+	xxx_hidden_Severity    Severity               `protobuf:"varint,9,opt,name=severity,proto3,enum=org.opennms.plugin.grpc.proto.spog.Severity"`
+	xxx_hidden_IpAddress   string                 `protobuf:"bytes,10,opt,name=ip_address,json=ipAddress,proto3"`
+	xxx_hidden_DistPoller  string                 `protobuf:"bytes,11,opt,name=dist_poller,json=distPoller,proto3"`
+	xxx_hidden_SnmpInfo    *SnmpInfo              `protobuf:"bytes,12,opt,name=snmpInfo,proto3"`
+	xxx_hidden_NodeId      uint64                 `protobuf:"varint,13,opt,name=node_id,json=nodeId,proto3"`
+	xxx_hidden_Label       string                 `protobuf:"bytes,14,opt,name=label,proto3"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *Event) Reset() {
@@ -954,117 +1387,221 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Event.ProtoReflect.Descriptor instead.
-func (*Event) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{7}
-}
-
 func (x *Event) GetId() uint64 {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return 0
 }
 
 func (x *Event) GetUei() string {
 	if x != nil {
-		return x.Uei
+		return x.xxx_hidden_Uei
 	}
 	return ""
 }
 
 func (x *Event) GetTime() uint64 {
 	if x != nil {
-		return x.Time
+		return x.xxx_hidden_Time
 	}
 	return 0
 }
 
 func (x *Event) GetSource() string {
 	if x != nil {
-		return x.Source
+		return x.xxx_hidden_Source
 	}
 	return ""
 }
 
 func (x *Event) GetParameter() []*EventParameter {
 	if x != nil {
-		return x.Parameter
+		if x.xxx_hidden_Parameter != nil {
+			return *x.xxx_hidden_Parameter
+		}
 	}
 	return nil
 }
 
 func (x *Event) GetCreateTime() uint64 {
 	if x != nil {
-		return x.CreateTime
+		return x.xxx_hidden_CreateTime
 	}
 	return 0
 }
 
 func (x *Event) GetDescription() string {
 	if x != nil {
-		return x.Description
+		return x.xxx_hidden_Description
 	}
 	return ""
 }
 
 func (x *Event) GetLogMessage() string {
 	if x != nil {
-		return x.LogMessage
+		return x.xxx_hidden_LogMessage
 	}
 	return ""
 }
 
 func (x *Event) GetSeverity() Severity {
 	if x != nil {
-		return x.Severity
+		return x.xxx_hidden_Severity
 	}
 	return Severity_INDETERMINATE
 }
 
 func (x *Event) GetIpAddress() string {
 	if x != nil {
-		return x.IpAddress
+		return x.xxx_hidden_IpAddress
 	}
 	return ""
 }
 
 func (x *Event) GetDistPoller() string {
 	if x != nil {
-		return x.DistPoller
+		return x.xxx_hidden_DistPoller
 	}
 	return ""
 }
 
 func (x *Event) GetSnmpInfo() *SnmpInfo {
 	if x != nil {
-		return x.SnmpInfo
+		return x.xxx_hidden_SnmpInfo
 	}
 	return nil
 }
 
 func (x *Event) GetNodeId() uint64 {
 	if x != nil {
-		return x.NodeId
+		return x.xxx_hidden_NodeId
 	}
 	return 0
 }
 
 func (x *Event) GetLabel() string {
 	if x != nil {
-		return x.Label
+		return x.xxx_hidden_Label
 	}
 	return ""
 }
 
+func (x *Event) SetId(v uint64) {
+	x.xxx_hidden_Id = v
+}
+
+func (x *Event) SetUei(v string) {
+	x.xxx_hidden_Uei = v
+}
+
+func (x *Event) SetTime(v uint64) {
+	x.xxx_hidden_Time = v
+}
+
+func (x *Event) SetSource(v string) {
+	x.xxx_hidden_Source = v
+}
+
+func (x *Event) SetParameter(v []*EventParameter) {
+	x.xxx_hidden_Parameter = &v
+}
+
+func (x *Event) SetCreateTime(v uint64) {
+	x.xxx_hidden_CreateTime = v
+}
+
+func (x *Event) SetDescription(v string) {
+	x.xxx_hidden_Description = v
+}
+
+func (x *Event) SetLogMessage(v string) {
+	x.xxx_hidden_LogMessage = v
+}
+
+func (x *Event) SetSeverity(v Severity) {
+	x.xxx_hidden_Severity = v
+}
+
+func (x *Event) SetIpAddress(v string) {
+	x.xxx_hidden_IpAddress = v
+}
+
+func (x *Event) SetDistPoller(v string) {
+	x.xxx_hidden_DistPoller = v
+}
+
+func (x *Event) SetSnmpInfo(v *SnmpInfo) {
+	x.xxx_hidden_SnmpInfo = v
+}
+
+func (x *Event) SetNodeId(v uint64) {
+	x.xxx_hidden_NodeId = v
+}
+
+func (x *Event) SetLabel(v string) {
+	x.xxx_hidden_Label = v
+}
+
+func (x *Event) HasSnmpInfo() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_SnmpInfo != nil
+}
+
+func (x *Event) ClearSnmpInfo() {
+	x.xxx_hidden_SnmpInfo = nil
+}
+
+type Event_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id          uint64
+	Uei         string
+	Time        uint64
+	Source      string
+	Parameter   []*EventParameter
+	CreateTime  uint64
+	Description string
+	LogMessage  string
+	Severity    Severity
+	IpAddress   string
+	DistPoller  string
+	SnmpInfo    *SnmpInfo
+	NodeId      uint64
+	Label       string
+}
+
+func (b0 Event_builder) Build() *Event {
+	m0 := &Event{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_Uei = b.Uei
+	x.xxx_hidden_Time = b.Time
+	x.xxx_hidden_Source = b.Source
+	x.xxx_hidden_Parameter = &b.Parameter
+	x.xxx_hidden_CreateTime = b.CreateTime
+	x.xxx_hidden_Description = b.Description
+	x.xxx_hidden_LogMessage = b.LogMessage
+	x.xxx_hidden_Severity = b.Severity
+	x.xxx_hidden_IpAddress = b.IpAddress
+	x.xxx_hidden_DistPoller = b.DistPoller
+	x.xxx_hidden_SnmpInfo = b.SnmpInfo
+	x.xxx_hidden_NodeId = b.NodeId
+	x.xxx_hidden_Label = b.Label
+	return m0
+}
+
 type NmsInventoryUpdateList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
-	Snapshot      bool                   `protobuf:"varint,4,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
-	Nodes         []*Node                `protobuf:"bytes,5,rep,name=nodes,proto3" json:"nodes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_InstanceId   string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3"`
+	xxx_hidden_InstanceName string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3"`
+	xxx_hidden_Snapshot     bool                   `protobuf:"varint,4,opt,name=snapshot,proto3"`
+	xxx_hidden_Nodes        *[]*Node               `protobuf:"bytes,5,rep,name=nodes,proto3"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *NmsInventoryUpdateList) Reset() {
@@ -1092,47 +1629,80 @@ func (x *NmsInventoryUpdateList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use NmsInventoryUpdateList.ProtoReflect.Descriptor instead.
-func (*NmsInventoryUpdateList) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{8}
-}
-
 func (x *NmsInventoryUpdateList) GetInstanceId() string {
 	if x != nil {
-		return x.InstanceId
+		return x.xxx_hidden_InstanceId
 	}
 	return ""
 }
 
 func (x *NmsInventoryUpdateList) GetInstanceName() string {
 	if x != nil {
-		return x.InstanceName
+		return x.xxx_hidden_InstanceName
 	}
 	return ""
 }
 
 func (x *NmsInventoryUpdateList) GetSnapshot() bool {
 	if x != nil {
-		return x.Snapshot
+		return x.xxx_hidden_Snapshot
 	}
 	return false
 }
 
 func (x *NmsInventoryUpdateList) GetNodes() []*Node {
 	if x != nil {
-		return x.Nodes
+		if x.xxx_hidden_Nodes != nil {
+			return *x.xxx_hidden_Nodes
+		}
 	}
 	return nil
 }
 
+func (x *NmsInventoryUpdateList) SetInstanceId(v string) {
+	x.xxx_hidden_InstanceId = v
+}
+
+func (x *NmsInventoryUpdateList) SetInstanceName(v string) {
+	x.xxx_hidden_InstanceName = v
+}
+
+func (x *NmsInventoryUpdateList) SetSnapshot(v bool) {
+	x.xxx_hidden_Snapshot = v
+}
+
+func (x *NmsInventoryUpdateList) SetNodes(v []*Node) {
+	x.xxx_hidden_Nodes = &v
+}
+
+type NmsInventoryUpdateList_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	InstanceId   string
+	InstanceName string
+	Snapshot     bool
+	Nodes        []*Node
+}
+
+func (b0 NmsInventoryUpdateList_builder) Build() *NmsInventoryUpdateList {
+	m0 := &NmsInventoryUpdateList{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_InstanceId = b.InstanceId
+	x.xxx_hidden_InstanceName = b.InstanceName
+	x.xxx_hidden_Snapshot = b.Snapshot
+	x.xxx_hidden_Nodes = &b.Nodes
+	return m0
+}
+
 type AlarmUpdateList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
-	Snapshot      bool                   `protobuf:"varint,4,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
-	Alarms        []*Alarm               `protobuf:"bytes,5,rep,name=alarms,proto3" json:"alarms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_InstanceId   string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3"`
+	xxx_hidden_InstanceName string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3"`
+	xxx_hidden_Snapshot     bool                   `protobuf:"varint,4,opt,name=snapshot,proto3"`
+	xxx_hidden_Alarms       *[]*Alarm              `protobuf:"bytes,5,rep,name=alarms,proto3"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *AlarmUpdateList) Reset() {
@@ -1160,47 +1730,80 @@ func (x *AlarmUpdateList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AlarmUpdateList.ProtoReflect.Descriptor instead.
-func (*AlarmUpdateList) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{9}
-}
-
 func (x *AlarmUpdateList) GetInstanceId() string {
 	if x != nil {
-		return x.InstanceId
+		return x.xxx_hidden_InstanceId
 	}
 	return ""
 }
 
 func (x *AlarmUpdateList) GetInstanceName() string {
 	if x != nil {
-		return x.InstanceName
+		return x.xxx_hidden_InstanceName
 	}
 	return ""
 }
 
 func (x *AlarmUpdateList) GetSnapshot() bool {
 	if x != nil {
-		return x.Snapshot
+		return x.xxx_hidden_Snapshot
 	}
 	return false
 }
 
 func (x *AlarmUpdateList) GetAlarms() []*Alarm {
 	if x != nil {
-		return x.Alarms
+		if x.xxx_hidden_Alarms != nil {
+			return *x.xxx_hidden_Alarms
+		}
 	}
 	return nil
 }
 
+func (x *AlarmUpdateList) SetInstanceId(v string) {
+	x.xxx_hidden_InstanceId = v
+}
+
+func (x *AlarmUpdateList) SetInstanceName(v string) {
+	x.xxx_hidden_InstanceName = v
+}
+
+func (x *AlarmUpdateList) SetSnapshot(v bool) {
+	x.xxx_hidden_Snapshot = v
+}
+
+func (x *AlarmUpdateList) SetAlarms(v []*Alarm) {
+	x.xxx_hidden_Alarms = &v
+}
+
+type AlarmUpdateList_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	InstanceId   string
+	InstanceName string
+	Snapshot     bool
+	Alarms       []*Alarm
+}
+
+func (b0 AlarmUpdateList_builder) Build() *AlarmUpdateList {
+	m0 := &AlarmUpdateList{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_InstanceId = b.InstanceId
+	x.xxx_hidden_InstanceName = b.InstanceName
+	x.xxx_hidden_Snapshot = b.Snapshot
+	x.xxx_hidden_Alarms = &b.Alarms
+	return m0
+}
+
 type EventUpdateList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
-	Snapshot      bool                   `protobuf:"varint,4,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
-	Event         []*Event               `protobuf:"bytes,5,rep,name=event,proto3" json:"event,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_InstanceId   string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3"`
+	xxx_hidden_InstanceName string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3"`
+	xxx_hidden_Snapshot     bool                   `protobuf:"varint,4,opt,name=snapshot,proto3"`
+	xxx_hidden_Event        *[]*Event              `protobuf:"bytes,5,rep,name=event,proto3"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *EventUpdateList) Reset() {
@@ -1228,46 +1831,79 @@ func (x *EventUpdateList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EventUpdateList.ProtoReflect.Descriptor instead.
-func (*EventUpdateList) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{10}
-}
-
 func (x *EventUpdateList) GetInstanceId() string {
 	if x != nil {
-		return x.InstanceId
+		return x.xxx_hidden_InstanceId
 	}
 	return ""
 }
 
 func (x *EventUpdateList) GetInstanceName() string {
 	if x != nil {
-		return x.InstanceName
+		return x.xxx_hidden_InstanceName
 	}
 	return ""
 }
 
 func (x *EventUpdateList) GetSnapshot() bool {
 	if x != nil {
-		return x.Snapshot
+		return x.xxx_hidden_Snapshot
 	}
 	return false
 }
 
 func (x *EventUpdateList) GetEvent() []*Event {
 	if x != nil {
-		return x.Event
+		if x.xxx_hidden_Event != nil {
+			return *x.xxx_hidden_Event
+		}
 	}
 	return nil
 }
 
+func (x *EventUpdateList) SetInstanceId(v string) {
+	x.xxx_hidden_InstanceId = v
+}
+
+func (x *EventUpdateList) SetInstanceName(v string) {
+	x.xxx_hidden_InstanceName = v
+}
+
+func (x *EventUpdateList) SetSnapshot(v bool) {
+	x.xxx_hidden_Snapshot = v
+}
+
+func (x *EventUpdateList) SetEvent(v []*Event) {
+	x.xxx_hidden_Event = &v
+}
+
+type EventUpdateList_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	InstanceId   string
+	InstanceName string
+	Snapshot     bool
+	Event        []*Event
+}
+
+func (b0 EventUpdateList_builder) Build() *EventUpdateList {
+	m0 := &EventUpdateList{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_InstanceId = b.InstanceId
+	x.xxx_hidden_InstanceName = b.InstanceName
+	x.xxx_hidden_Snapshot = b.Snapshot
+	x.xxx_hidden_Event = &b.Event
+	return m0
+}
+
 type MonitoringInstance struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceType  string                 `protobuf:"bytes,1,opt,name=instance_type,json=instanceType,proto3" json:"instance_type,omitempty"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_InstanceType string                 `protobuf:"bytes,1,opt,name=instance_type,json=instanceType,proto3"`
+	xxx_hidden_InstanceId   string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3"`
+	xxx_hidden_InstanceName string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *MonitoringInstance) Reset() {
@@ -1295,39 +1931,64 @@ func (x *MonitoringInstance) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MonitoringInstance.ProtoReflect.Descriptor instead.
-func (*MonitoringInstance) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{11}
-}
-
 func (x *MonitoringInstance) GetInstanceType() string {
 	if x != nil {
-		return x.InstanceType
+		return x.xxx_hidden_InstanceType
 	}
 	return ""
 }
 
 func (x *MonitoringInstance) GetInstanceId() string {
 	if x != nil {
-		return x.InstanceId
+		return x.xxx_hidden_InstanceId
 	}
 	return ""
 }
 
 func (x *MonitoringInstance) GetInstanceName() string {
 	if x != nil {
-		return x.InstanceName
+		return x.xxx_hidden_InstanceName
 	}
 	return ""
 }
 
+func (x *MonitoringInstance) SetInstanceType(v string) {
+	x.xxx_hidden_InstanceType = v
+}
+
+func (x *MonitoringInstance) SetInstanceId(v string) {
+	x.xxx_hidden_InstanceId = v
+}
+
+func (x *MonitoringInstance) SetInstanceName(v string) {
+	x.xxx_hidden_InstanceName = v
+}
+
+type MonitoringInstance_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	InstanceType string
+	InstanceId   string
+	InstanceName string
+}
+
+func (b0 MonitoringInstance_builder) Build() *MonitoringInstance {
+	m0 := &MonitoringInstance{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_InstanceType = b.InstanceType
+	x.xxx_hidden_InstanceId = b.InstanceId
+	x.xxx_hidden_InstanceName = b.InstanceName
+	return m0
+}
+
 type HeartBeat struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	MonitoringInstance *MonitoringInstance    `protobuf:"bytes,1,opt,name=monitoring_instance,json=monitoringInstance,proto3" json:"monitoring_instance,omitempty"`
-	Message            string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Timestamp          uint64                 `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                         protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_MonitoringInstance *MonitoringInstance    `protobuf:"bytes,1,opt,name=monitoring_instance,json=monitoringInstance,proto3"`
+	xxx_hidden_Message            string                 `protobuf:"bytes,2,opt,name=message,proto3"`
+	xxx_hidden_Timestamp          uint64                 `protobuf:"varint,3,opt,name=timestamp,proto3"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *HeartBeat) Reset() {
@@ -1355,30 +2016,66 @@ func (x *HeartBeat) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HeartBeat.ProtoReflect.Descriptor instead.
-func (*HeartBeat) Descriptor() ([]byte, []int) {
-	return file_spog_proto_rawDescGZIP(), []int{12}
-}
-
 func (x *HeartBeat) GetMonitoringInstance() *MonitoringInstance {
 	if x != nil {
-		return x.MonitoringInstance
+		return x.xxx_hidden_MonitoringInstance
 	}
 	return nil
 }
 
 func (x *HeartBeat) GetMessage() string {
 	if x != nil {
-		return x.Message
+		return x.xxx_hidden_Message
 	}
 	return ""
 }
 
 func (x *HeartBeat) GetTimestamp() uint64 {
 	if x != nil {
-		return x.Timestamp
+		return x.xxx_hidden_Timestamp
 	}
 	return 0
+}
+
+func (x *HeartBeat) SetMonitoringInstance(v *MonitoringInstance) {
+	x.xxx_hidden_MonitoringInstance = v
+}
+
+func (x *HeartBeat) SetMessage(v string) {
+	x.xxx_hidden_Message = v
+}
+
+func (x *HeartBeat) SetTimestamp(v uint64) {
+	x.xxx_hidden_Timestamp = v
+}
+
+func (x *HeartBeat) HasMonitoringInstance() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_MonitoringInstance != nil
+}
+
+func (x *HeartBeat) ClearMonitoringInstance() {
+	x.xxx_hidden_MonitoringInstance = nil
+}
+
+type HeartBeat_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	MonitoringInstance *MonitoringInstance
+	Message            string
+	Timestamp          uint64
+}
+
+func (b0 HeartBeat_builder) Build() *HeartBeat {
+	m0 := &HeartBeat{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_MonitoringInstance = b.MonitoringInstance
+	x.xxx_hidden_Message = b.Message
+	x.xxx_hidden_Timestamp = b.Timestamp
+	return m0
 }
 
 var File_spog_proto protoreflect.FileDescriptor
@@ -1534,18 +2231,6 @@ const file_spog_proto_rawDesc = "" +
 	"\vEventUpdate\x123.org.opennms.plugin.grpc.proto.spog.EventUpdateList\x1a\x16.google.protobuf.Empty\"\x00(\x010\x01\x12^\n" +
 	"\x0fHeartBeatUpdate\x12-.org.opennms.plugin.grpc.proto.spog.HeartBeat\x1a\x16.google.protobuf.Empty\"\x00(\x010\x01B&\n" +
 	"\"org.opennms.plugin.grpc.proto.spogP\x01b\x06proto3"
-
-var (
-	file_spog_proto_rawDescOnce sync.Once
-	file_spog_proto_rawDescData []byte
-)
-
-func file_spog_proto_rawDescGZIP() []byte {
-	file_spog_proto_rawDescOnce.Do(func() {
-		file_spog_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_spog_proto_rawDesc), len(file_spog_proto_rawDesc)))
-	})
-	return file_spog_proto_rawDescData
-}
 
 var file_spog_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_spog_proto_msgTypes = make([]protoimpl.MessageInfo, 13)

@@ -29,7 +29,7 @@ type ServiceSyncServer struct {
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
 
-func NewServiceSyncServer(opts ...ServiceSyncServerOption) *ServiceSyncServer {
+func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, error) {
 	s := new(ServiceSyncServer)
 
 	// default to no logging
@@ -44,10 +44,12 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) *ServiceSyncServer {
 	s.dnsClient = new(net.Resolver)
 
 	for _, o := range opts {
-		o(s)
+		if err := o(s); err != nil {
+			return nil, fmt.Errorf("error applying option: %w", err)
+		}
 	}
 
-	return s
+	return s, nil
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {

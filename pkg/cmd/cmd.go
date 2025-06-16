@@ -37,7 +37,6 @@ func Execute(args []string) error {
 		Command: simplecommand.New(
 			"onms-grpc-receiver",
 			"A gRPC receiver for OpenNMS",
-			simplecommand.WithViper("onms_grpc", strings.NewReplacer("-", "_")),
 		),
 	}
 	rootCmd.Command.SubCommands = []simplecobra.Commander{
@@ -45,7 +44,9 @@ func Execute(args []string) error {
 			Command: simplecommand.New(
 				"spog",
 				"Run in SPoG mode",
-				simplecommand.WithViper("onms_grpc", strings.NewReplacer("-", "_")),
+				simplecommand.Long(`Run in Service Provider over gRPC (SPoG) mode. In this mode gRPC messages from any number of downstream
+OpenNMS Horizon instances may be handled as all Heartbeat and AlarmUpdate messages include details of the downstream Horizon instance. Inventory and Event updates are not handled in this mode, only HeartBeat and Alarm updates.`),
+				simplecommand.WithViper("onms_grpc", strings.NewReplacer("-", "_", ".", "_")),
 			),
 		},
 	}

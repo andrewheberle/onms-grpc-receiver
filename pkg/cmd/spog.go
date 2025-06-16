@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/url"
 	"os"
 
 	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
@@ -28,7 +27,7 @@ type spogCommand struct {
 	cert               string
 	key                string
 	listenAddress      string
-	alertManager       string
+	alertManagers      []string
 	alertManagerScheme string
 	alertManagerSrv    string
 	urlMapping         map[string]string
@@ -51,7 +50,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.key, "key", "", "TLS Key")
 	cmd.MarkFlagsRequiredTogether("cert", "key")
 	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service listen address")
-	cmd.Flags().StringVar(&c.alertManager, "alertmanager.url", "", "Alertmanager URL")
+	cmd.Flags().StringSliceVar(&c.alertManagers, "alertmanager.url", []string{}, "Alertmanager URL")
 	cmd.Flags().StringVar(&c.alertManagerScheme, "alertmanager.scheme", "http", "Alertmanager scheme (http/https) when SRV records are used")
 	cmd.Flags().StringVar(&c.alertManagerSrv, "alertmanager.srv", "", "Alertmanager SRV Record")
 	cmd.MarkFlagsMutuallyExclusive("alertmanager.url", "alertmanager.srv")
@@ -89,15 +88,10 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	}
 
 	// set up alertmanager via url
-	if c.alertManager != "" {
-		u, err := url.Parse(c.alertManager)
-		if err != nil {
-			return err
-		}
+	if len(c.alertManagers) > 0 {
+		c.logger.Debug("set up alertmanager", "urls", c.alertManagers)
 
-		c.logger.Debug("set up alertmanager", "url", u.String())
-
-		opts = append(opts, server.WithAlertmanagerUrl(u))
+		opts = append(opts, server.WithAlertmanagerUrl(c.alertManagers))
 	}
 
 	// set up alertmanager via SRV
@@ -113,7 +107,11 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	}
 
 	// set up server
-	c.srv = server.NewServiceSyncServer(opts...)
+	srv, err := server.NewServiceSyncServer(opts...)
+	if err != nil {
+		return err
+	}
+	c.srv = srv
 
 	c.logger.Debug("completed PreRun", "command", this.CobraCommand.Name())
 

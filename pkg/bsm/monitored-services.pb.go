@@ -32,7 +32,6 @@ import (
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
-	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -44,14 +43,14 @@ const (
 )
 
 type ServiceComponent struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ForeignService string                 `protobuf:"bytes,1,opt,name=foreign_service,json=foreignService,proto3" json:"foreign_service,omitempty"`
-	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Healthy        bool                   `protobuf:"varint,3,opt,name=healthy,proto3" json:"healthy,omitempty"`
-	Attributes     map[string]string      `protobuf:"bytes,4,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Tags           []string               `protobuf:"bytes,5,rep,name=tags,proto3" json:"tags,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_ForeignService string                 `protobuf:"bytes,1,opt,name=foreign_service,json=foreignService,proto3"`
+	xxx_hidden_Name           string                 `protobuf:"bytes,2,opt,name=name,proto3"`
+	xxx_hidden_Healthy        bool                   `protobuf:"varint,3,opt,name=healthy,proto3"`
+	xxx_hidden_Attributes     map[string]string      `protobuf:"bytes,4,rep,name=attributes,proto3" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	xxx_hidden_Tags           []string               `protobuf:"bytes,5,rep,name=tags,proto3"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *ServiceComponent) Reset() {
@@ -79,54 +78,91 @@ func (x *ServiceComponent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ServiceComponent.ProtoReflect.Descriptor instead.
-func (*ServiceComponent) Descriptor() ([]byte, []int) {
-	return file_monitored_services_proto_rawDescGZIP(), []int{0}
-}
-
 func (x *ServiceComponent) GetForeignService() string {
 	if x != nil {
-		return x.ForeignService
+		return x.xxx_hidden_ForeignService
 	}
 	return ""
 }
 
 func (x *ServiceComponent) GetName() string {
 	if x != nil {
-		return x.Name
+		return x.xxx_hidden_Name
 	}
 	return ""
 }
 
 func (x *ServiceComponent) GetHealthy() bool {
 	if x != nil {
-		return x.Healthy
+		return x.xxx_hidden_Healthy
 	}
 	return false
 }
 
 func (x *ServiceComponent) GetAttributes() map[string]string {
 	if x != nil {
-		return x.Attributes
+		return x.xxx_hidden_Attributes
 	}
 	return nil
 }
 
 func (x *ServiceComponent) GetTags() []string {
 	if x != nil {
-		return x.Tags
+		return x.xxx_hidden_Tags
 	}
 	return nil
 }
 
+func (x *ServiceComponent) SetForeignService(v string) {
+	x.xxx_hidden_ForeignService = v
+}
+
+func (x *ServiceComponent) SetName(v string) {
+	x.xxx_hidden_Name = v
+}
+
+func (x *ServiceComponent) SetHealthy(v bool) {
+	x.xxx_hidden_Healthy = v
+}
+
+func (x *ServiceComponent) SetAttributes(v map[string]string) {
+	x.xxx_hidden_Attributes = v
+}
+
+func (x *ServiceComponent) SetTags(v []string) {
+	x.xxx_hidden_Tags = v
+}
+
+type ServiceComponent_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	ForeignService string
+	Name           string
+	Healthy        bool
+	Attributes     map[string]string
+	Tags           []string
+}
+
+func (b0 ServiceComponent_builder) Build() *ServiceComponent {
+	m0 := &ServiceComponent{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_ForeignService = b.ForeignService
+	x.xxx_hidden_Name = b.Name
+	x.xxx_hidden_Healthy = b.Healthy
+	x.xxx_hidden_Attributes = b.Attributes
+	x.xxx_hidden_Tags = b.Tags
+	return m0
+}
+
 type InventoryUpdateList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ForeignType   string                 `protobuf:"bytes,1,opt,name=foreign_type,json=foreignType,proto3" json:"foreign_type,omitempty"`
-	ForeignSource string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3" json:"foreign_source,omitempty"`
-	Snapshot      bool                   `protobuf:"varint,3,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
-	Services      []*ServiceComponent    `protobuf:"bytes,4,rep,name=services,proto3" json:"services,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_ForeignType   string                 `protobuf:"bytes,1,opt,name=foreign_type,json=foreignType,proto3"`
+	xxx_hidden_ForeignSource string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3"`
+	xxx_hidden_Snapshot      bool                   `protobuf:"varint,3,opt,name=snapshot,proto3"`
+	xxx_hidden_Services      *[]*ServiceComponent   `protobuf:"bytes,4,rep,name=services,proto3"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *InventoryUpdateList) Reset() {
@@ -154,45 +190,78 @@ func (x *InventoryUpdateList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InventoryUpdateList.ProtoReflect.Descriptor instead.
-func (*InventoryUpdateList) Descriptor() ([]byte, []int) {
-	return file_monitored_services_proto_rawDescGZIP(), []int{1}
-}
-
 func (x *InventoryUpdateList) GetForeignType() string {
 	if x != nil {
-		return x.ForeignType
+		return x.xxx_hidden_ForeignType
 	}
 	return ""
 }
 
 func (x *InventoryUpdateList) GetForeignSource() string {
 	if x != nil {
-		return x.ForeignSource
+		return x.xxx_hidden_ForeignSource
 	}
 	return ""
 }
 
 func (x *InventoryUpdateList) GetSnapshot() bool {
 	if x != nil {
-		return x.Snapshot
+		return x.xxx_hidden_Snapshot
 	}
 	return false
 }
 
 func (x *InventoryUpdateList) GetServices() []*ServiceComponent {
 	if x != nil {
-		return x.Services
+		if x.xxx_hidden_Services != nil {
+			return *x.xxx_hidden_Services
+		}
 	}
 	return nil
 }
 
+func (x *InventoryUpdateList) SetForeignType(v string) {
+	x.xxx_hidden_ForeignType = v
+}
+
+func (x *InventoryUpdateList) SetForeignSource(v string) {
+	x.xxx_hidden_ForeignSource = v
+}
+
+func (x *InventoryUpdateList) SetSnapshot(v bool) {
+	x.xxx_hidden_Snapshot = v
+}
+
+func (x *InventoryUpdateList) SetServices(v []*ServiceComponent) {
+	x.xxx_hidden_Services = &v
+}
+
+type InventoryUpdateList_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	ForeignType   string
+	ForeignSource string
+	Snapshot      bool
+	Services      []*ServiceComponent
+}
+
+func (b0 InventoryUpdateList_builder) Build() *InventoryUpdateList {
+	m0 := &InventoryUpdateList{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_ForeignType = b.ForeignType
+	x.xxx_hidden_ForeignSource = b.ForeignSource
+	x.xxx_hidden_Snapshot = b.Snapshot
+	x.xxx_hidden_Services = &b.Services
+	return m0
+}
+
 type StateUpdate struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ForeignService string                 `protobuf:"bytes,1,opt,name=foreign_service,json=foreignService,proto3" json:"foreign_service,omitempty"`
-	Healthy        bool                   `protobuf:"varint,2,opt,name=healthy,proto3" json:"healthy,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_ForeignService string                 `protobuf:"bytes,1,opt,name=foreign_service,json=foreignService,proto3"`
+	xxx_hidden_Healthy        bool                   `protobuf:"varint,2,opt,name=healthy,proto3"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *StateUpdate) Reset() {
@@ -220,32 +289,51 @@ func (x *StateUpdate) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use StateUpdate.ProtoReflect.Descriptor instead.
-func (*StateUpdate) Descriptor() ([]byte, []int) {
-	return file_monitored_services_proto_rawDescGZIP(), []int{2}
-}
-
 func (x *StateUpdate) GetForeignService() string {
 	if x != nil {
-		return x.ForeignService
+		return x.xxx_hidden_ForeignService
 	}
 	return ""
 }
 
 func (x *StateUpdate) GetHealthy() bool {
 	if x != nil {
-		return x.Healthy
+		return x.xxx_hidden_Healthy
 	}
 	return false
 }
 
+func (x *StateUpdate) SetForeignService(v string) {
+	x.xxx_hidden_ForeignService = v
+}
+
+func (x *StateUpdate) SetHealthy(v bool) {
+	x.xxx_hidden_Healthy = v
+}
+
+type StateUpdate_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	ForeignService string
+	Healthy        bool
+}
+
+func (b0 StateUpdate_builder) Build() *StateUpdate {
+	m0 := &StateUpdate{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_ForeignService = b.ForeignService
+	x.xxx_hidden_Healthy = b.Healthy
+	return m0
+}
+
 type StateUpdateList struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ForeignType   string                 `protobuf:"bytes,1,opt,name=foreign_type,json=foreignType,proto3" json:"foreign_type,omitempty"`
-	ForeignSource string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3" json:"foreign_source,omitempty"`
-	Updates       []*StateUpdate         `protobuf:"bytes,3,rep,name=updates,proto3" json:"updates,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                    protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_ForeignType   string                 `protobuf:"bytes,1,opt,name=foreign_type,json=foreignType,proto3"`
+	xxx_hidden_ForeignSource string                 `protobuf:"bytes,2,opt,name=foreign_source,json=foreignSource,proto3"`
+	xxx_hidden_Updates       *[]*StateUpdate        `protobuf:"bytes,3,rep,name=updates,proto3"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *StateUpdateList) Reset() {
@@ -273,39 +361,66 @@ func (x *StateUpdateList) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use StateUpdateList.ProtoReflect.Descriptor instead.
-func (*StateUpdateList) Descriptor() ([]byte, []int) {
-	return file_monitored_services_proto_rawDescGZIP(), []int{3}
-}
-
 func (x *StateUpdateList) GetForeignType() string {
 	if x != nil {
-		return x.ForeignType
+		return x.xxx_hidden_ForeignType
 	}
 	return ""
 }
 
 func (x *StateUpdateList) GetForeignSource() string {
 	if x != nil {
-		return x.ForeignSource
+		return x.xxx_hidden_ForeignSource
 	}
 	return ""
 }
 
 func (x *StateUpdateList) GetUpdates() []*StateUpdate {
 	if x != nil {
-		return x.Updates
+		if x.xxx_hidden_Updates != nil {
+			return *x.xxx_hidden_Updates
+		}
 	}
 	return nil
 }
 
+func (x *StateUpdateList) SetForeignType(v string) {
+	x.xxx_hidden_ForeignType = v
+}
+
+func (x *StateUpdateList) SetForeignSource(v string) {
+	x.xxx_hidden_ForeignSource = v
+}
+
+func (x *StateUpdateList) SetUpdates(v []*StateUpdate) {
+	x.xxx_hidden_Updates = &v
+}
+
+type StateUpdateList_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	ForeignType   string
+	ForeignSource string
+	Updates       []*StateUpdate
+}
+
+func (b0 StateUpdateList_builder) Build() *StateUpdateList {
+	m0 := &StateUpdateList{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_ForeignType = b.ForeignType
+	x.xxx_hidden_ForeignSource = b.ForeignSource
+	x.xxx_hidden_Updates = &b.Updates
+	return m0
+}
+
 type MonitoringInstance struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	InstanceType  string                 `protobuf:"bytes,1,opt,name=instance_type,json=instanceType,proto3" json:"instance_type,omitempty"`
-	InstanceId    string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
-	InstanceName  string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3" json:"instance_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                   protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_InstanceType string                 `protobuf:"bytes,1,opt,name=instance_type,json=instanceType,proto3"`
+	xxx_hidden_InstanceId   string                 `protobuf:"bytes,2,opt,name=instance_id,json=instanceId,proto3"`
+	xxx_hidden_InstanceName string                 `protobuf:"bytes,3,opt,name=instance_name,json=instanceName,proto3"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *MonitoringInstance) Reset() {
@@ -333,39 +448,64 @@ func (x *MonitoringInstance) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MonitoringInstance.ProtoReflect.Descriptor instead.
-func (*MonitoringInstance) Descriptor() ([]byte, []int) {
-	return file_monitored_services_proto_rawDescGZIP(), []int{4}
-}
-
 func (x *MonitoringInstance) GetInstanceType() string {
 	if x != nil {
-		return x.InstanceType
+		return x.xxx_hidden_InstanceType
 	}
 	return ""
 }
 
 func (x *MonitoringInstance) GetInstanceId() string {
 	if x != nil {
-		return x.InstanceId
+		return x.xxx_hidden_InstanceId
 	}
 	return ""
 }
 
 func (x *MonitoringInstance) GetInstanceName() string {
 	if x != nil {
-		return x.InstanceName
+		return x.xxx_hidden_InstanceName
 	}
 	return ""
 }
 
+func (x *MonitoringInstance) SetInstanceType(v string) {
+	x.xxx_hidden_InstanceType = v
+}
+
+func (x *MonitoringInstance) SetInstanceId(v string) {
+	x.xxx_hidden_InstanceId = v
+}
+
+func (x *MonitoringInstance) SetInstanceName(v string) {
+	x.xxx_hidden_InstanceName = v
+}
+
+type MonitoringInstance_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	InstanceType string
+	InstanceId   string
+	InstanceName string
+}
+
+func (b0 MonitoringInstance_builder) Build() *MonitoringInstance {
+	m0 := &MonitoringInstance{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_InstanceType = b.InstanceType
+	x.xxx_hidden_InstanceId = b.InstanceId
+	x.xxx_hidden_InstanceName = b.InstanceName
+	return m0
+}
+
 type HeartBeat struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	MonitoringInstance *MonitoringInstance    `protobuf:"bytes,1,opt,name=monitoring_instance,json=monitoringInstance,proto3" json:"monitoring_instance,omitempty"`
-	Message            string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Timestamp          uint64                 `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                         protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_MonitoringInstance *MonitoringInstance    `protobuf:"bytes,1,opt,name=monitoring_instance,json=monitoringInstance,proto3"`
+	xxx_hidden_Message            string                 `protobuf:"bytes,2,opt,name=message,proto3"`
+	xxx_hidden_Timestamp          uint64                 `protobuf:"varint,3,opt,name=timestamp,proto3"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *HeartBeat) Reset() {
@@ -393,30 +533,66 @@ func (x *HeartBeat) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HeartBeat.ProtoReflect.Descriptor instead.
-func (*HeartBeat) Descriptor() ([]byte, []int) {
-	return file_monitored_services_proto_rawDescGZIP(), []int{5}
-}
-
 func (x *HeartBeat) GetMonitoringInstance() *MonitoringInstance {
 	if x != nil {
-		return x.MonitoringInstance
+		return x.xxx_hidden_MonitoringInstance
 	}
 	return nil
 }
 
 func (x *HeartBeat) GetMessage() string {
 	if x != nil {
-		return x.Message
+		return x.xxx_hidden_Message
 	}
 	return ""
 }
 
 func (x *HeartBeat) GetTimestamp() uint64 {
 	if x != nil {
-		return x.Timestamp
+		return x.xxx_hidden_Timestamp
 	}
 	return 0
+}
+
+func (x *HeartBeat) SetMonitoringInstance(v *MonitoringInstance) {
+	x.xxx_hidden_MonitoringInstance = v
+}
+
+func (x *HeartBeat) SetMessage(v string) {
+	x.xxx_hidden_Message = v
+}
+
+func (x *HeartBeat) SetTimestamp(v uint64) {
+	x.xxx_hidden_Timestamp = v
+}
+
+func (x *HeartBeat) HasMonitoringInstance() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_MonitoringInstance != nil
+}
+
+func (x *HeartBeat) ClearMonitoringInstance() {
+	x.xxx_hidden_MonitoringInstance = nil
+}
+
+type HeartBeat_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	MonitoringInstance *MonitoringInstance
+	Message            string
+	Timestamp          uint64
+}
+
+func (b0 HeartBeat_builder) Build() *HeartBeat {
+	m0 := &HeartBeat{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.xxx_hidden_MonitoringInstance = b.MonitoringInstance
+	x.xxx_hidden_Message = b.Message
+	x.xxx_hidden_Timestamp = b.Timestamp
+	return m0
 }
 
 var File_monitored_services_proto protoreflect.FileDescriptor
@@ -461,18 +637,6 @@ const file_monitored_services_proto_rawDesc = "" +
 	"\vStateUpdate\x127.org.opennms.plugin.grpc.proto.services.StateUpdateList\x1a\x16.google.protobuf.Empty\"\x00(\x010\x01\x12b\n" +
 	"\x0fHeartBeatUpdate\x121.org.opennms.plugin.grpc.proto.services.HeartBeat\x1a\x16.google.protobuf.Empty\"\x00(\x010\x01B*\n" +
 	"&org.opennms.plugin.grpc.proto.servicesP\x01b\x06proto3"
-
-var (
-	file_monitored_services_proto_rawDescOnce sync.Once
-	file_monitored_services_proto_rawDescData []byte
-)
-
-func file_monitored_services_proto_rawDescGZIP() []byte {
-	file_monitored_services_proto_rawDescOnce.Do(func() {
-		file_monitored_services_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_monitored_services_proto_rawDesc), len(file_monitored_services_proto_rawDesc)))
-	})
-	return file_monitored_services_proto_rawDescData
-}
 
 var file_monitored_services_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_monitored_services_proto_goTypes = []any{
