@@ -212,13 +212,12 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 
 func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 	if len(list) > 0 {
-		buf := new(bytes.Buffer)
-		enc := json.NewEncoder(buf)
-		if err := enc.Encode(&list); err != nil {
+		ams, err := s.alertmanagers()
+		if err != nil {
 			return err
 		}
 
-		ams, err := s.alertmanagers()
+		payload, err := json.Marshal(list)
 		if err != nil {
 			return err
 		}
@@ -227,12 +226,17 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 		return func() error {
 			logger := s.logger.With("count", len(list))
 			for _, am := range ams {
+				// create new buffer from JSON payload
+				buf := bytes.NewReader(payload)
+
+				// do http POST
 				resp, err := s.httpClient.Post(am, "application/json", buf)
 				if err != nil {
 					logger.Warn("error sending to alertmanager", "url", am, "status", resp.Status, "error", err)
 					continue
 				}
 
+				// check status code
 				if resp.StatusCode != http.StatusOK {
 					logger.Warn("bad status code from alertmanager", "url", am, "status", resp.Status)
 					continue
