@@ -135,7 +135,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 		certinel, err := fswatcher.New(c.cert, c.key)
 		if err != nil {
-			return fmt.Errorf("cannot set uo fswatcher: %w", err)
+			return fmt.Errorf("cannot set up fswatcher: %w", err)
 		}
 
 		g.Add(func() error {
