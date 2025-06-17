@@ -88,7 +88,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	s.registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		s.alertmanagerTotal, s.alertmanagerErrors,
+		s.alertmanagerTotal, s.alertmanagerErrors, s.alarmTotal, s.heartbeatTotal,
 	)
 
 	return s, nil
