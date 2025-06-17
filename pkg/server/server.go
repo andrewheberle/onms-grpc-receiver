@@ -34,6 +34,7 @@ type ServiceSyncServer struct {
 	alertmanagerTotal  *prometheus.CounterVec
 	alertmanagerErrors *prometheus.CounterVec
 	alarmTotal         *prometheus.CounterVec
+	alarmCount         *prometheus.GaugeVec
 	heartbeatTotal     *prometheus.CounterVec
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
@@ -75,7 +76,12 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		[]string{"alertmanager"})
 	s.alarmTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "onmsgrpc_alarm_total",
-		Help: "Total number of alarms seen from a Horizon instance.",
+		Help: "Total number of alarm updates seen from a Horizon instance.",
+	},
+		[]string{"instance_id"})
+	s.alarmCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "onmsgrpc_alarm_count",
+		Help: "Current number of active alarms for a Horizon instance.",
 	},
 		[]string{"instance_id"})
 	s.heartbeatTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -88,7 +94,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	s.registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		s.alertmanagerTotal, s.alertmanagerErrors, s.alarmTotal, s.heartbeatTotal,
+		s.alertmanagerTotal, s.alertmanagerErrors, s.alarmTotal, s.alarmCount, s.heartbeatTotal,
 	)
 
 	return s, nil
@@ -111,7 +117,8 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		}
 
 		// add number of alarms to counter
-		s.alarmTotal.WithLabelValues(in.GetInstanceId()).Add(float64(len(in.GetAlarms())))
+		s.alarmTotal.WithLabelValues(in.GetInstanceId()).Inc()
+		s.alarmCount.WithLabelValues(in.GetInstanceId()).Set(float64(len(in.GetAlarms())))
 
 		logger := s.logger.With("id", in.GetInstanceId(),
 			"name", in.GetInstanceName(),
