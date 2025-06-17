@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -27,6 +29,8 @@ type spogCommand struct {
 	cert               string
 	key                string
 	listenAddress      string
+	metricsAddress     string
+	metricsPath        string
 	alertManagers      []string
 	alertManagerScheme string
 	alertManagerSrv    string
@@ -49,7 +53,9 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.cert, "cert", "", "TLS Certificate")
 	cmd.Flags().StringVar(&c.key, "key", "", "TLS Key")
 	cmd.MarkFlagsRequiredTogether("cert", "key")
-	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service listen address")
+	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service gRPC listen address")
+	cmd.Flags().StringVar(&c.metricsAddress, "metrics.address", "", "Metrics listen address")
+	cmd.Flags().StringVar(&c.metricsPath, "metrics.path", "/metrics", "Metrics path")
 	cmd.Flags().StringSliceVar(&c.alertManagers, "alertmanager.url", []string{}, "Alertmanager URL")
 	cmd.Flags().StringVar(&c.alertManagerScheme, "alertmanager.scheme", "http", "Alertmanager scheme (http/https) when SRV records are used")
 	cmd.Flags().StringVar(&c.alertManagerSrv, "alertmanager.srv", "", "Alertmanager SRV Record")
@@ -119,6 +125,8 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 }
 
 func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
+	var tlsConfig *tls.Config
+
 	// set up listener
 	l, err := net.Listen("tcp", c.listenAddress)
 	if err != nil {
@@ -146,11 +154,11 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 			cancel()
 		})
 
-		config := &tls.Config{
+		tlsConfig = &tls.Config{
 			GetCertificate: certinel.GetCertificate,
 		}
 
-		c.opts = append(c.opts, grpc.Creds(credentials.NewTLS(config)))
+		c.opts = append(c.opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 
 	// create register and add server to run group
@@ -163,6 +171,49 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	}, func(err error) {
 		grpcServer.Stop()
 	})
+
+	// set up metrics
+	if c.metricsAddress != "" {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Healthy"))
+		})
+		mux.Handle(c.metricsPath, c.srv.MetricsHandler())
+
+		srv := &http.Server{
+			Addr:    c.metricsAddress,
+			Handler: mux,
+		}
+
+		if c.cert != "" && c.key != "" {
+			// add TLS config
+			srv.TLSConfig = tlsConfig
+			g.Add(func() error {
+				// run tls server
+				c.logger.Info("started metrics service", "address", c.metricsAddress, "path", c.metricsPath, "cert", c.cert, "key", c.key)
+				return srv.ListenAndServeTLS("", "")
+			}, func(err error) {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					srv.Shutdown(ctx)
+					cancel()
+				}()
+			})
+		} else {
+			g.Add(func() error {
+				// run non tls server
+				c.logger.Info("started metrics service", "address", c.metricsAddress, "path", c.metricsPath)
+				return srv.ListenAndServe()
+			}, func(err error) {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					srv.Shutdown(ctx)
+					cancel()
+				}()
+			})
+		}
+	}
 
 	return g.Run()
 }

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type ServiceSyncServerOption func(*ServiceSyncServer) error
@@ -80,6 +82,14 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.urlMap = m
+
+		return nil
+	}
+}
+
+func WithRegistry(reg *prometheus.Registry) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.registry = reg
 
 		return nil
 	}
