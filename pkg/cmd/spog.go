@@ -161,7 +161,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 		return grpcServer.Serve(l)
 	}, func(err error) {
-		l.Close()
+		grpcServer.Stop()
 	})
 
 	return g.Run()
