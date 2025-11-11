@@ -9,7 +9,7 @@ FROM gcr.io/distroless/base-debian12:nonroot@sha256:10136f394cbc891efa9f20974a48
 
 COPY --from=builder /build/onms-grpc-receiver /app/onms-grpc-receiver
 
-ENV ONMS_GRPC_ADDRESS=":8080"
+ENV ONMS_GRPC_ADDRESS=":8080" ONMS_GRPC_METRICS_ADDRESS=":8081"
 
 EXPOSE 8080
 
