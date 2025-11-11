@@ -197,12 +197,12 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 
 				// add generator URL if mapping set
 				if baseUrl := inmap(in.GetInstanceId(), s.urlMap); baseUrl != "" {
-					u, err := url.JoinPath(baseUrl, fmt.Sprintf("/alarm/detail.htm?id=%d", alarm.GetId()))
+					u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
 					if err != nil {
 						s.logger.Error("problem creating generatorURL", "error", err)
 						continue
 					}
-					alert.GeneratorURL = strfmt.URI(u)
+					alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
 				}
 
 				// add to list
