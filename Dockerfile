@@ -13,4 +13,4 @@ ENV ONMS_GRPC_ADDRESS=":8080"
 
 EXPOSE 8080
 
-ENTRYPOINT [ "/app/onms-grpc-receiver" ]
+ENTRYPOINT [ "/app/onms-grpc-receiver", "spog" ]
