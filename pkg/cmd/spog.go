@@ -169,7 +169,13 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 		return grpcServer.Serve(l)
 	}, func(err error) {
-		grpcServer.Stop()
+		go func() {
+			timer := time.AfterFunc(3*time.Second, func() {
+				grpcServer.Stop()
+			})
+			defer timer.Stop()
+			grpcServer.GracefulStop()
+		}()
 	})
 
 	// set up metrics
