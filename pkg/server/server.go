@@ -219,6 +219,11 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 	}
 }
 
+// EventUpdate simply accepts and discards any data to avoid errors on the Horizon side
+func (s *ServiceSyncServer) EventUpdate(stream grpc.BidiStreamingServer[pb.EventUpdateList, emptypb.Empty]) error {
+	return discard(stream)
+}
+
 func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.HeartBeat, emptypb.Empty]) error {
 
 	for {
@@ -267,6 +272,23 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 		// send to alertmanager at the end
 		if err := s.send([]*models.PostableAlert{hb}); err != nil {
 			s.logger.Error("error during send", "error", err)
+		}
+	}
+}
+
+// InventoryUpdate simply accepts and discards any data to avoid errors on the Horizon side
+func (s *ServiceSyncServer) InventoryUpdate(stream grpc.BidiStreamingServer[pb.NmsInventoryUpdateList, emptypb.Empty]) error {
+	return discard(stream)
+}
+
+func discard[T any](stream grpc.BidiStreamingServer[T, emptypb.Empty]) error {
+	for {
+		_, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
 		}
 	}
 }
