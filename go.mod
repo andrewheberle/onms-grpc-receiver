@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.4
 
 require (
-	github.com/andrewheberle/simplecommand v0.4.0
+	github.com/andrewheberle/simplecommand v0.5.0
 	github.com/bep/simplecobra v0.6.1
 	github.com/cloudflare/certinel v0.4.1
 	github.com/go-openapi/strfmt v0.24.0
