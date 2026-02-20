@@ -169,6 +169,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 				// add basics
 				labels := map[string]string{
 					"alertname":     alarm.GetUei(),
+					"alarm_id":      fmt.Sprint(alarm.GetId()),
 					"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
 					"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
 					"instance_id":   in.GetInstanceId(),
@@ -203,6 +204,14 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 						continue
 					}
 					alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
+				}
+
+				if rk := alarm.GetReductionKey(); rk != "" {
+					labels["reduction_key"] = rk
+				}
+
+				if ck := alarm.GetClearKey(); ck != "" {
+					labels["clear_key"] = ck
 				}
 
 				// add to list
