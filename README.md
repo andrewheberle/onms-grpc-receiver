@@ -65,10 +65,14 @@ Labels are set as follows:
 | Node Name                                | node_name          |                                 |
 | Instance ID (UUID of Horizon instance)   | instance_id        |                                 |
 | Instance Name (name of Horizon instance) | instance_name      |                                 |
+| UEI of Alarm                             | alertname          |                                 |
+| Alarm ID                                 | alarm_id           |                                 |
 | Severity                                 | severity           |                                 |
 | Service (name)                           | service            | Only present on service outages |
 | Interface (IP address)                   | ip_address         | Only present on service outages |
 | Node Location                            | site               |                                 |
+| Reduction Key                            | reduction_key      |                                 |
+| Clear Key                                | clear_key          |                                 |
 
 ### Alarm link/URL
 
