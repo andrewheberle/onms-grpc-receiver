@@ -192,6 +192,14 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 					labels["site"] = location
 				}
 
+				if rk := alarm.GetReductionKey(); rk != "" {
+					labels["reduction_key"] = rk
+				}
+
+				if ck := alarm.GetClearKey(); ck != "" {
+					labels["clear_key"] = ck
+				}
+
 				alert := models.Alert{
 					Labels: labels,
 				}
@@ -204,14 +212,6 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 						continue
 					}
 					alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
-				}
-
-				if rk := alarm.GetReductionKey(); rk != "" {
-					labels["reduction_key"] = rk
-				}
-
-				if ck := alarm.GetClearKey(); ck != "" {
-					labels["clear_key"] = ck
 				}
 
 				// add to list
