@@ -1,11 +1,11 @@
-FROM golang:1.24@sha256:d2d2bc1c84f7e60d7d2438a3836ae7d0c847f4888464e7ec9ba3a1339a1ee804 AS builder
+FROM golang:1.25@sha256:85c0ab0b73087fda36bf8692efe2cf67c54a06d7ca3b49c489bbff98c9954d64 AS builder
 
 COPY . /build
 
 RUN cd /build && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags '-w' ./cmd/onms-grpc-receiver
 
-FROM gcr.io/distroless/base-debian12:nonroot@sha256:8b9f2e503e55aff85b79d6b22c7a63a65170e8698ae80de680e3f5ea600977bf
+FROM gcr.io/distroless/base-debian13:nonroot@sha256:e2f22688c7f48cf0657f7c0929b52174c80b73ea24ea898df7517c26621659bb
 
 COPY --from=builder /build/onms-grpc-receiver /app/onms-grpc-receiver
 
