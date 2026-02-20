@@ -1,12 +1,11 @@
 module github.com/andrewheberle/onms-grpc-receiver
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.25.4
 
 require (
-	github.com/andrewheberle/simplecommand v0.4.0
-	github.com/bep/simplecobra v0.6.1
+	github.com/andrewheberle/simplecommand v0.5.1
+	github.com/andrewheberle/simplecommand/vipercommand v0.5.1
+	github.com/bep/simplecobra v0.7.0
 	github.com/cloudflare/certinel v0.4.1
 	github.com/go-openapi/strfmt v0.25.0
 	github.com/oklog/run v1.2.0
@@ -18,7 +17,6 @@ require (
 
 require (
 	github.com/andrewheberle/simpleviper v1.2.0 // indirect
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
@@ -54,7 +52,7 @@ require (
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/cobra v1.9.1 // indirect
+	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect

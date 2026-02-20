@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/andrewheberle/simplecommand"
+	"github.com/andrewheberle/simplecommand/vipercommand"
 	"github.com/bep/simplecobra"
 )
 
@@ -39,16 +40,20 @@ func Execute(args []string) error {
 			"A gRPC receiver for OpenNMS",
 		),
 	}
-	rootCmd.Command.SubCommands = []simplecobra.Commander{
-		&spogCommand{
-			Command: simplecommand.New(
-				"spog",
-				"Run in SPoG mode",
-				simplecommand.Long(`Run in Service Provider over gRPC (SPoG) mode. In this mode gRPC messages from any number of downstream
+
+	spog := &spogCommand{
+		Command: vipercommand.New(
+			"spog",
+			"Run in SPoG mode",
+			simplecommand.Long(`Run in Service Provider over gRPC (SPoG) mode. In this mode gRPC messages from any number of downstream
 OpenNMS Horizon instances may be handled as all Heartbeat and AlarmUpdate messages include details of the downstream Horizon instance. Inventory and Event updates are not handled in this mode, only HeartBeat and Alarm updates.`),
-				simplecommand.WithViper("onms_grpc", strings.NewReplacer("-", "_", ".", "_")),
-			),
-		},
+		),
+	}
+	spog.EnvKeyReplacer = strings.NewReplacer("-", "_", ".", "_")
+	spog.EnvPrefix = "onms_grpc"
+
+	rootCmd.Command.SubCommands = []simplecobra.Commander{
+		spog,
 	}
 
 	x, err := simplecobra.New(rootCmd)

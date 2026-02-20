@@ -12,7 +12,7 @@ import (
 
 	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/andrewheberle/simplecommand"
+	"github.com/andrewheberle/simplecommand/vipercommand"
 	"github.com/bep/simplecobra"
 	"github.com/cloudflare/certinel/fswatcher"
 	"github.com/oklog/run"
@@ -41,7 +41,7 @@ type spogCommand struct {
 
 	headers map[string]string
 
-	*simplecommand.Command
+	*vipercommand.Command
 }
 
 func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
