@@ -95,6 +95,14 @@ func WithRegistry(reg *prometheus.Registry) ServiceSyncServerOption {
 	}
 }
 
+func WithVerbose() ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.verbose = true
+
+		return nil
+	}
+}
+
 type customTransport struct {
 	Transport http.RoundTripper
 	Headers   map[string]string
