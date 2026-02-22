@@ -114,6 +114,11 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		opts = append(opts, server.WithHeaders(c.headers))
 	}
 
+	// enable verbose logging
+	if c.verbose {
+		opts = append(opts, server.WithVerbose())
+	}
+
 	// set up server
 	srv, err := server.NewServiceSyncServer(opts...)
 	if err != nil {
