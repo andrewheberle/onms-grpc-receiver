@@ -29,6 +29,7 @@ type ServiceSyncServer struct {
 	urlMap        map[string]string
 	dnsClient     *net.Resolver
 	registry      *prometheus.Registry
+	verbose       bool
 
 	// metrics
 	alertmanagerTotal  *prometheus.CounterVec
@@ -130,7 +131,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 
 		list := make([]*models.PostableAlert, 0)
 		for _, alarm := range in.GetAlarms() {
-			if s.alertmanagers == nil {
+			if s.alertmanagers == nil || s.verbose {
 				logger.Info("AlarmUpdate",
 					"id", alarm.GetId(),
 					"uei", alarm.GetUei(),

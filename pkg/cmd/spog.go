@@ -36,8 +36,9 @@ type spogCommand struct {
 	alertManagerSrv    string
 	urlMapping         map[string]string
 
-	debug  bool
-	silent bool
+	debug   bool
+	silent  bool
+	verbose bool
 
 	headers map[string]string
 
@@ -65,6 +66,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 
 	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
+	cmd.Flags().BoolVar(&c.verbose, "verbose", false, "Log all messages")
 
 	return nil
 }
@@ -110,6 +112,11 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	// add custom headers if set
 	if len(c.headers) > 0 {
 		opts = append(opts, server.WithHeaders(c.headers))
+	}
+
+	// enable verbose logging
+	if c.verbose {
+		opts = append(opts, server.WithVerbose())
 	}
 
 	// set up server
