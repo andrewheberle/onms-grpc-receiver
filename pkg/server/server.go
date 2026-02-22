@@ -163,6 +163,14 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 					"last_update_time", alarm.GetLastUpdateTime(),
 				)
 
+				// finish here if no alertmanagers are configured
+				if s.alertmanagers == nil {
+					continue
+				}
+			}
+
+			// ignore Normal severity alarms
+			if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
 				continue
 			}
 
