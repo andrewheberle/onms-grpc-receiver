@@ -103,6 +103,14 @@ func WithVerbose() ServiceSyncServerOption {
 	}
 }
 
+func WithResolveTimeout(d time.Duration) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.resolveTimeout = d
+
+		return nil
+	}
+}
+
 type customTransport struct {
 	Transport http.RoundTripper
 	Headers   map[string]string

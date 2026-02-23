@@ -23,13 +23,14 @@ import (
 )
 
 type ServiceSyncServer struct {
-	alertmanagers func() ([]string, error)
-	logger        *slog.Logger
-	httpClient    *http.Client
-	urlMap        map[string]string
-	dnsClient     *net.Resolver
-	registry      *prometheus.Registry
-	verbose       bool
+	alertmanagers  func() ([]string, error)
+	logger         *slog.Logger
+	httpClient     *http.Client
+	urlMap         map[string]string
+	dnsClient      *net.Resolver
+	registry       *prometheus.Registry
+	verbose        bool
+	resolveTimeout time.Duration
 
 	// metrics
 	alertmanagerTotal  *prometheus.CounterVec
@@ -42,21 +43,8 @@ type ServiceSyncServer struct {
 }
 
 func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, error) {
-	s := new(ServiceSyncServer)
-
-	// default to no logging
-	s.logger = slog.New(slog.DiscardHandler)
-
-	// basic http client
-	s.httpClient = &http.Client{
-		Timeout: time.Second * 5,
-	}
-
-	// set up dns client
-	s.dnsClient = new(net.Resolver)
-
-	// ensure registry is non-nil
-	s.registry = prometheus.NewRegistry()
+	// set up with defaults
+	s := defaultServiceSyncServer()
 
 	for _, o := range opts {
 		if err := o(s); err != nil {
@@ -82,7 +70,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		[]string{"instance_id"})
 	s.alarmCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "onmsgrpc_alarm_count",
-		Help: "Current number of active alarms for a Horizon instance.",
+		Help: "Current number of active alarms for a Horizon instance from the last full snapshot of alarms.",
 	},
 		[]string{"instance_id"})
 	s.heartbeatTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -99,6 +87,27 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	)
 
 	return s, nil
+}
+
+func defaultServiceSyncServer(opts ...ServiceSyncServerOption) *ServiceSyncServer {
+	return &ServiceSyncServer{
+		// default to no logging
+		logger: slog.New(slog.DiscardHandler),
+
+		// basic http client
+		httpClient: &http.Client{
+			Timeout: time.Second * 5,
+		},
+
+		// set up dns client
+		dnsClient: new(net.Resolver),
+
+		// ensure registry is non-nil
+		registry: prometheus.NewRegistry(),
+
+		// default based on upstream
+		resolveTimeout: time.Minute * 5,
+	}
 }
 
 func (s *ServiceSyncServer) MetricsHandler() http.Handler {
@@ -119,7 +128,11 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 
 		// add number of alarms to counter
 		s.alarmTotal.WithLabelValues(in.GetInstanceId()).Inc()
-		s.alarmCount.WithLabelValues(in.GetInstanceId()).Set(float64(len(in.GetAlarms())))
+
+		// if this is a snapshot of all alarms, update the total alarm count
+		if in.GetSnapshot() {
+			s.alarmCount.WithLabelValues(in.GetInstanceId()).Set(float64(len(in.GetAlarms())))
+		}
 
 		logger := s.logger.With("instance_id", in.GetInstanceId(),
 			"name", in.GetInstanceName(),
@@ -230,12 +243,14 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 				alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
 			}
 
+			// default start and end time based on first event time and now + 5m
 			post := &models.PostableAlert{
 				Alert:    alert,
 				StartsAt: strfmt.DateTime(firstEventTime),
+				EndsAt:   strfmt.DateTime(time.Now().Add(time.Minute * 5)),
 			}
 
-			// add ends at for cleared alerts based on last update time
+			// set ends at for cleared alerts based on last update time
 			if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
 				post.EndsAt = strfmt.DateTime(lastEventTime)
 			}
