@@ -121,7 +121,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		s.alarmTotal.WithLabelValues(in.GetInstanceId()).Inc()
 		s.alarmCount.WithLabelValues(in.GetInstanceId()).Set(float64(len(in.GetAlarms())))
 
-		logger := s.logger.With("id", in.GetInstanceId(),
+		logger := s.logger.With("instance_id", in.GetInstanceId(),
 			"name", in.GetInstanceName(),
 			"snapshot", in.GetSnapshot(),
 			"alarmcount", len(in.GetAlarms()),
@@ -133,7 +133,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		for _, alarm := range in.GetAlarms() {
 			if s.alertmanagers == nil || s.verbose {
 				logger.Info("AlarmUpdate",
-					"id", alarm.GetId(),
+					"alarm_id", alarm.GetId(),
 					"uei", alarm.GetUei(),
 					slog.Group("NodeCriteria",
 						"id", alarm.GetNodeCriteria().GetId(),
@@ -174,60 +174,74 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 				continue
 			}
 
-			if alarm.GetSeverity() != uint32(pb.Severity_CLEARED) {
-				// add basics
-				labels := map[string]string{
-					"alertname":     alarm.GetUei(),
-					"alarm_id":      fmt.Sprint(alarm.GetId()),
-					"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
-					"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
-					"instance_id":   in.GetInstanceId(),
-					"instance_name": in.GetInstanceName(),
-					"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
-				}
+			firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
+			lastEventTime := time.UnixMilli(int64(alarm.GetLastEventTime()))
 
-				// add service if set
-				if service := alarm.GetServiceName(); service != "" {
-					labels["service"] = service
-				}
-
-				// add ip_address if set
-				if ip := alarm.GetIpAddress(); ip != "" {
-					labels["ip_address"] = ip
-				}
-
-				// set site as node location or site if mapping set
-				if location := alarm.GetNodeCriteria().GetLocation(); location != "" {
-					labels["site"] = location
-				}
-
-				if rk := alarm.GetReductionKey(); rk != "" {
-					labels["reduction_key"] = rk
-				}
-
-				if ck := alarm.GetClearKey(); ck != "" {
-					labels["clear_key"] = ck
-				}
-
-				alert := models.Alert{
-					Labels: labels,
-				}
-
-				// add generator URL if mapping set
-				if baseUrl := inmap(in.GetInstanceId(), s.urlMap); baseUrl != "" {
-					u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
-					if err != nil {
-						s.logger.Error("problem creating generatorURL", "error", err)
-						continue
-					}
-					alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
-				}
-
-				// add to list
-				list = append(list, &models.PostableAlert{
-					Alert: alert,
-				})
+			if alarm.GetSeverity() != uint32(pb.Severity_CLEARED) && lastEventTime.Before(time.Now().Add(-time.Minute*5)) {
+				// skip cleared alarms older than 5-minutes
+				continue
 			}
+
+			// add basics
+			labels := map[string]string{
+				"alertname":     alarm.GetUei(),
+				"alarm_id":      fmt.Sprint(alarm.GetId()),
+				"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
+				"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
+				"instance_id":   in.GetInstanceId(),
+				"instance_name": in.GetInstanceName(),
+				"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
+			}
+
+			// add service if set
+			if service := alarm.GetServiceName(); service != "" {
+				labels["service"] = service
+			}
+
+			// add ip_address if set
+			if ip := alarm.GetIpAddress(); ip != "" {
+				labels["ip_address"] = ip
+			}
+
+			// set site as node location or site if mapping set
+			if location := alarm.GetNodeCriteria().GetLocation(); location != "" {
+				labels["site"] = location
+			}
+
+			if rk := alarm.GetReductionKey(); rk != "" {
+				labels["reduction_key"] = rk
+			}
+
+			if ck := alarm.GetClearKey(); ck != "" {
+				labels["clear_key"] = ck
+			}
+
+			alert := models.Alert{
+				Labels: labels,
+			}
+
+			// add generator URL if mapping set
+			if baseUrl := inmap(in.GetInstanceId(), s.urlMap); baseUrl != "" {
+				u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
+				if err != nil {
+					s.logger.Error("problem creating generatorURL", "error", err)
+					continue
+				}
+				alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
+			}
+
+			post := &models.PostableAlert{
+				Alert:    alert,
+				StartsAt: strfmt.DateTime(firstEventTime),
+			}
+
+			// add ends at for cleared alerts based on last update time
+			if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
+				post.EndsAt = strfmt.DateTime(lastEventTime)
+			}
+
+			// add to list
+			list = append(list, post)
 		}
 
 		// send to alertmanager at the end
