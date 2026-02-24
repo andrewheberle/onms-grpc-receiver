@@ -188,6 +188,15 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 		}()
 	})
 
+	// set up batch message handler
+	g.Add(func() error {
+		c.logger.Info("started gRPC message handler")
+
+		return c.srv.Start()
+	}, func(err error) {
+		c.srv.Shutdown()
+	})
+
 	// set up metrics
 	if c.metricsAddress != "" {
 		mux := http.NewServeMux()

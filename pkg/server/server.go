@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -39,7 +41,21 @@ type ServiceSyncServer struct {
 	alarmCount         *prometheus.GaugeVec
 	heartbeatTotal     *prometheus.CounterVec
 
+	// batching
+	alarmQueue   chan []instanceAlarm
+	batchMaxSize int
+	batchMaxWait time.Duration
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	pb.UnimplementedNmsInventoryServiceSyncServer
+}
+
+type instanceAlarm struct {
+	alarm        *pb.Alarm
+	instanceID   string
+	instanceName string
 }
 
 func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, error) {
@@ -90,6 +106,8 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 }
 
 func defaultServiceSyncServer() *ServiceSyncServer {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &ServiceSyncServer{
 		// default to no logging
 		logger: slog.New(slog.DiscardHandler),
@@ -107,6 +125,14 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 
 		// default based on upstream
 		resolveTimeout: time.Minute * 5,
+
+		// batching
+		batchMaxSize: 10,
+		batchMaxWait: 20 * time.Second,
+		alarmQueue:   make(chan []instanceAlarm, 100),
+
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -114,6 +140,16 @@ func (s *ServiceSyncServer) MetricsHandler() http.Handler {
 	return promhttp.HandlerFor(s.registry, promhttp.HandlerOpts{
 		Registry: s.registry,
 	})
+}
+
+func (s *ServiceSyncServer) Start() error {
+	s.batchWorker()
+
+	return nil
+}
+
+func (s *ServiceSyncServer) Shutdown() {
+	s.cancel()
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
@@ -131,33 +167,96 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		alarms := in.GetAlarms()
 		isSnapshot := in.GetSnapshot()
 
-		// add number of alarms to counter
 		s.alarmTotal.WithLabelValues(id).Inc()
 
-		// if this is a snapshot of all alarms, update the total alarm count
 		if isSnapshot {
 			s.alarmCount.WithLabelValues(id).Set(float64(len(alarms)))
 		}
 
-		logger := s.logger.With("instance_id", id,
+		s.logger.Info("AlarmUpdate",
+			"instance_id", id,
 			"name", name,
 			"snapshot", isSnapshot,
 			"alarmcount", len(alarms),
 		)
 
-		logger.Info("AlarmUpdate")
+		// wrap alarms with instance info before enqueuing
+		wrapped := make([]instanceAlarm, 0, len(alarms))
+		for _, alarm := range alarms {
+			wrapped = append(wrapped, instanceAlarm{
+				alarm:        alarm,
+				instanceID:   id,
+				instanceName: name,
+			})
+		}
 
-		// handle in the background
-		go s.handleAlarms(logger, alarms, id, name)
+		// enqueue - drop if full (best effort)
+		select {
+		case s.alarmQueue <- wrapped:
+		default:
+			s.logger.Warn("alarm queue full, dropping batch", "alarmcount", len(alarms), "instance_id", id)
+		}
 	}
 }
 
-func (s *ServiceSyncServer) handleAlarms(logger *slog.Logger, alarms []*pb.Alarm, id, name string) {
+func (s *ServiceSyncServer) batchWorker() {
+	var batch []instanceAlarm
+	timer := time.NewTimer(s.batchMaxWait)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			if len(batch) > 0 {
+				s.logger.Info("batchWorker: flushing on shutdown", "alarmcount", len(batch))
+				s.handleAlarms(batch)
+			}
+			return
+
+		case alarms, ok := <-s.alarmQueue:
+			if !ok {
+				// channel closed, flush remainder
+				if len(batch) > 0 {
+					s.logger.Info("batchWorker: flushing on close", "alarmcount", len(batch))
+					s.handleAlarms(batch)
+				}
+				return
+			}
+
+			batch = append(batch, alarms...)
+
+			if len(batch) >= s.batchMaxSize {
+				s.logger.Info("batchWorker: flushing on size", "alarmcount", len(batch))
+				s.handleAlarms(batch)
+				batch = nil
+
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(s.batchMaxWait)
+			}
+
+		case <-timer.C:
+			if len(batch) > 0 {
+				s.logger.Info("batchWorker: flushing on timer", "alarmcount", len(batch))
+				s.handleAlarms(batch)
+				batch = nil
+			}
+			timer.Reset(s.batchMaxWait)
+		}
+	}
+}
+
+func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 	list := make([]*models.PostableAlert, 0)
 	now := time.Now()
-	for _, alarm := range alarms {
+	for _, ia := range alarms {
+		alarm := ia.alarm
+		id := ia.instanceID
+		name := ia.instanceName
+
 		if s.alertmanagers == nil || s.verbose {
-			logger.Info("AlarmUpdate",
+			s.logger.Info("AlarmUpdate",
 				"alarm_id", alarm.GetId(),
 				"uei", alarm.GetUei(),
 				slog.Group("NodeCriteria",
@@ -273,7 +372,7 @@ func (s *ServiceSyncServer) handleAlarms(logger *slog.Logger, alarms []*pb.Alarm
 
 	// send to alertmanager at the end
 	if err := s.send(list); err != nil {
-		logger.Error("error during send", "error", err)
+		s.logger.Error("error during send", "error", err)
 	}
 }
 
@@ -352,47 +451,59 @@ func discard[T any](stream grpc.BidiStreamingServer[T, emptypb.Empty]) error {
 }
 
 func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
-	if len(list) > 0 {
-		ams, err := s.alertmanagers()
-		if err != nil {
-			return err
-		}
+	if len(list) == 0 {
+		return nil
+	}
 
-		payload, err := json.Marshal(list)
-		if err != nil {
-			return err
-		}
+	ams, err := s.alertmanagers()
+	if err != nil {
+		return err
+	}
 
-		// try our list
-		return func() error {
-			logger := s.logger.With("count", len(list))
-			for _, am := range ams {
-				s.alertmanagerTotal.WithLabelValues(am).Inc()
+	payload, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
 
-				// create new buffer from JSON payload
-				buf := bytes.NewReader(payload)
+	logger := s.logger.With("count", len(list))
 
-				// do http POST
-				resp, err := s.httpClient.Post(am, "application/json", buf)
-				if err != nil {
-					logger.Warn("error sending to alertmanager", "url", am, "status", resp.Status, "error", err)
-					s.alertmanagerErrors.WithLabelValues(am).Inc()
-					continue
-				}
+	var wg sync.WaitGroup
+	for _, am := range ams {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
 
-				// check status code
-				if resp.StatusCode != http.StatusOK {
-					logger.Warn("bad status code from alertmanager", "url", am, "status", resp.Status)
-					s.alertmanagerErrors.WithLabelValues(am).Inc()
-					continue
-				}
+			s.alertmanagerTotal.WithLabelValues(url).Inc()
 
-				logger.Info("sent to alertmanager", "url", am, "status", resp.Status)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+			if err != nil {
+				logger.Warn("error creating request", "url", url, "error", err)
+				s.alertmanagerErrors.WithLabelValues(url).Inc()
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				logger.Warn("error sending to alertmanager", "url", url, "error", err)
+				s.alertmanagerErrors.WithLabelValues(url).Inc()
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				logger.Warn("bad status code from alertmanager", "url", url, "status", resp.Status)
+				s.alertmanagerErrors.WithLabelValues(url).Inc()
+				return
 			}
 
-			return nil
-		}()
+			logger.Info("sent to alertmanager", "url", url, "status", resp.Status)
+		}(am)
 	}
+	wg.Wait()
 
 	return nil
 }

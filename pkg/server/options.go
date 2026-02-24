@@ -111,6 +111,22 @@ func WithResolveTimeout(d time.Duration) ServiceSyncServerOption {
 	}
 }
 
+func WithBatchMaxSize(n int) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.batchMaxSize = n
+
+		return nil
+	}
+}
+
+func WithBatchMaxWait(d time.Duration) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.batchMaxWait = d
+
+		return nil
+	}
+}
+
 type customTransport struct {
 	Transport http.RoundTripper
 	Headers   map[string]string
