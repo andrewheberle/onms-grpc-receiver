@@ -24,6 +24,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 | --metrics.address     | Metrics listen address                                     |                |
 | --metrics.path        | Metrics path                                               | /metrics       |
 | --silent              | Disable all logging                                        |                |
+| --verbose             | Log incoming alarms  |                |
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
 
