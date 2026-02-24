@@ -89,7 +89,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	return s, nil
 }
 
-func defaultServiceSyncServer(opts ...ServiceSyncServerOption) *ServiceSyncServer {
+func defaultServiceSyncServer() *ServiceSyncServer {
 	return &ServiceSyncServer{
 		// default to no logging
 		logger: slog.New(slog.DiscardHandler),
@@ -126,143 +126,154 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 			return err
 		}
 
+		id := in.GetInstanceId()
+		name := in.GetInstanceName()
+		alarms := in.GetAlarms()
+		isSnapshot := in.GetSnapshot()
+
 		// add number of alarms to counter
-		s.alarmTotal.WithLabelValues(in.GetInstanceId()).Inc()
+		s.alarmTotal.WithLabelValues(id).Inc()
 
 		// if this is a snapshot of all alarms, update the total alarm count
-		if in.GetSnapshot() {
-			s.alarmCount.WithLabelValues(in.GetInstanceId()).Set(float64(len(in.GetAlarms())))
+		if isSnapshot {
+			s.alarmCount.WithLabelValues(id).Set(float64(len(alarms)))
 		}
 
-		logger := s.logger.With("instance_id", in.GetInstanceId(),
-			"name", in.GetInstanceName(),
-			"snapshot", in.GetSnapshot(),
-			"alarmcount", len(in.GetAlarms()),
+		logger := s.logger.With("instance_id", id,
+			"name", name,
+			"snapshot", isSnapshot,
+			"alarmcount", len(alarms),
 		)
 
 		logger.Info("AlarmUpdate")
 
-		list := make([]*models.PostableAlert, 0)
-		for _, alarm := range in.GetAlarms() {
-			if s.alertmanagers == nil || s.verbose {
-				logger.Info("AlarmUpdate",
-					"alarm_id", alarm.GetId(),
-					"uei", alarm.GetUei(),
-					slog.Group("NodeCriteria",
-						"id", alarm.GetNodeCriteria().GetId(),
-						"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
-						"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
-						"node_label", alarm.GetNodeCriteria().GetNodeLabel(),
-						"location", alarm.GetNodeCriteria().GetLocation(),
-					),
-					"ip_address", alarm.GetIpAddress(),
-					"service_name", alarm.GetServiceName(),
-					"reduction_key", alarm.GetReductionKey(),
-					"type", alarm.GetType(),
-					"count", alarm.GetCount(),
-					"severity", alarm.GetSeverity(),
-					"first_event_time", alarm.GetFirstEventTime(),
-					"description", alarm.GetDescription(),
-					"log_message", alarm.GetLogMessage(),
-					"ack_user", alarm.GetAckUser(),
-					"ack_time", alarm.GetAckTime(),
-					"last_event_time", alarm.GetLastEventTime(),
-					"if_index", alarm.GetIfIndex(),
-					"operator_instructions", alarm.GetOperatorInstructions(),
-					"clear_key", alarm.GetClearKey(),
-					"managed_object_instance", alarm.GetManagedObjectInstance(),
-					"managed_object_type", alarm.GetManagedObjectType(),
-					"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
-					"last_update_time", alarm.GetLastUpdateTime(),
-				)
+		// handle in the background
+		go s.handleAlarms(logger, alarms, id, name)
+	}
+}
 
-				// finish here if no alertmanagers are configured
-				if s.alertmanagers == nil {
-					continue
-				}
-			}
+func (s *ServiceSyncServer) handleAlarms(logger *slog.Logger, alarms []*pb.Alarm, id, name string) {
+	list := make([]*models.PostableAlert, 0)
+	now := time.Now()
+	for _, alarm := range alarms {
+		if s.alertmanagers == nil || s.verbose {
+			logger.Info("AlarmUpdate",
+				"alarm_id", alarm.GetId(),
+				"uei", alarm.GetUei(),
+				slog.Group("NodeCriteria",
+					"id", alarm.GetNodeCriteria().GetId(),
+					"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
+					"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
+					"node_label", alarm.GetNodeCriteria().GetNodeLabel(),
+					"location", alarm.GetNodeCriteria().GetLocation(),
+				),
+				"ip_address", alarm.GetIpAddress(),
+				"service_name", alarm.GetServiceName(),
+				"reduction_key", alarm.GetReductionKey(),
+				"type", alarm.GetType(),
+				"count", alarm.GetCount(),
+				"severity", alarm.GetSeverity(),
+				"first_event_time", alarm.GetFirstEventTime(),
+				"description", alarm.GetDescription(),
+				"log_message", alarm.GetLogMessage(),
+				"ack_user", alarm.GetAckUser(),
+				"ack_time", alarm.GetAckTime(),
+				"last_event_time", alarm.GetLastEventTime(),
+				"if_index", alarm.GetIfIndex(),
+				"operator_instructions", alarm.GetOperatorInstructions(),
+				"clear_key", alarm.GetClearKey(),
+				"managed_object_instance", alarm.GetManagedObjectInstance(),
+				"managed_object_type", alarm.GetManagedObjectType(),
+				"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
+				"last_update_time", alarm.GetLastUpdateTime(),
+			)
 
-			// ignore Normal severity alarms
-			if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
+			// finish here if no alertmanagers are configured
+			if s.alertmanagers == nil {
 				continue
 			}
+		}
 
-			firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
-			lastEventTime := time.UnixMilli(int64(alarm.GetLastEventTime()))
+		// ignore Normal severity alarms
+		if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
+			continue
+		}
 
-			if alarm.GetSeverity() != uint32(pb.Severity_CLEARED) && lastEventTime.Before(time.Now().Add(-time.Minute*5)) {
-				// skip cleared alarms older than 5-minutes
+		firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
+		lastEventTime := time.UnixMilli(int64(alarm.GetLastEventTime()))
+
+		if alarm.GetSeverity() != uint32(pb.Severity_CLEARED) && lastEventTime.Before(now.Add(-time.Minute*5)) {
+			// skip cleared alarms older than 5-minutes
+			continue
+		}
+
+		// add basics
+		labels := map[string]string{
+			"alertname":     alarm.GetUei(),
+			"alarm_id":      fmt.Sprint(alarm.GetId()),
+			"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
+			"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
+			"instance_id":   id,
+			"instance_name": name,
+			"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
+		}
+
+		// add service if set
+		if service := alarm.GetServiceName(); service != "" {
+			labels["service"] = service
+		}
+
+		// add ip_address if set
+		if ip := alarm.GetIpAddress(); ip != "" {
+			labels["ip_address"] = ip
+		}
+
+		// set site as node location or site if mapping set
+		if location := alarm.GetNodeCriteria().GetLocation(); location != "" {
+			labels["site"] = location
+		}
+
+		if rk := alarm.GetReductionKey(); rk != "" {
+			labels["reduction_key"] = rk
+		}
+
+		if ck := alarm.GetClearKey(); ck != "" {
+			labels["clear_key"] = ck
+		}
+
+		alert := models.Alert{
+			Labels: labels,
+		}
+
+		// add generator URL if mapping set
+		if baseUrl := inmap(id, s.urlMap); baseUrl != "" {
+			u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
+			if err != nil {
+				s.logger.Error("problem creating generatorURL", "error", err)
 				continue
 			}
-
-			// add basics
-			labels := map[string]string{
-				"alertname":     alarm.GetUei(),
-				"alarm_id":      fmt.Sprint(alarm.GetId()),
-				"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
-				"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
-				"instance_id":   in.GetInstanceId(),
-				"instance_name": in.GetInstanceName(),
-				"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
-			}
-
-			// add service if set
-			if service := alarm.GetServiceName(); service != "" {
-				labels["service"] = service
-			}
-
-			// add ip_address if set
-			if ip := alarm.GetIpAddress(); ip != "" {
-				labels["ip_address"] = ip
-			}
-
-			// set site as node location or site if mapping set
-			if location := alarm.GetNodeCriteria().GetLocation(); location != "" {
-				labels["site"] = location
-			}
-
-			if rk := alarm.GetReductionKey(); rk != "" {
-				labels["reduction_key"] = rk
-			}
-
-			if ck := alarm.GetClearKey(); ck != "" {
-				labels["clear_key"] = ck
-			}
-
-			alert := models.Alert{
-				Labels: labels,
-			}
-
-			// add generator URL if mapping set
-			if baseUrl := inmap(in.GetInstanceId(), s.urlMap); baseUrl != "" {
-				u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
-				if err != nil {
-					s.logger.Error("problem creating generatorURL", "error", err)
-					continue
-				}
-				alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
-			}
-
-			// default start and end time based on first event time and now + 5m
-			post := &models.PostableAlert{
-				Alert:    alert,
-				StartsAt: strfmt.DateTime(firstEventTime),
-				EndsAt:   strfmt.DateTime(time.Now().Add(time.Minute * 5)),
-			}
-
-			// set ends at for cleared alerts based on last update time
-			if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
-				post.EndsAt = strfmt.DateTime(lastEventTime)
-			}
-
-			// add to list
-			list = append(list, post)
+			alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
 		}
 
-		// send to alertmanager at the end
-		if err := s.send(list); err != nil {
-			s.logger.Error("error during send", "error", err)
+		// default start and end time based on first event time and now + 5m
+		post := &models.PostableAlert{
+			Alert:    alert,
+			StartsAt: strfmt.DateTime(firstEventTime),
+			EndsAt:   strfmt.DateTime(time.Now().Add(time.Minute * 5)),
 		}
+
+		// set ends at for cleared alerts based on last update time
+		if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
+			post.EndsAt = strfmt.DateTime(lastEventTime)
+		}
+
+		// add to list
+		list = append(list, post)
+	}
+
+	// send to alertmanager at the end
+	if err := s.send(list); err != nil {
+		logger.Error("error during send", "error", err)
 	}
 }
 
