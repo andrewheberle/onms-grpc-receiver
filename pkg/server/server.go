@@ -54,6 +54,7 @@ type ServiceSyncServer struct {
 
 type instanceAlarm struct {
 	alarm        *pb.Alarm
+	now          time.Time
 	instanceID   string
 	instanceName string
 }
@@ -187,6 +188,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 				alarm:        alarm,
 				instanceID:   id,
 				instanceName: name,
+				now:          time.Now(),
 			})
 		}
 
@@ -249,11 +251,11 @@ func (s *ServiceSyncServer) batchWorker() {
 
 func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 	list := make([]*models.PostableAlert, 0)
-	now := time.Now()
 	for _, ia := range alarms {
 		alarm := ia.alarm
 		id := ia.instanceID
 		name := ia.instanceName
+		now := ia.now
 
 		if s.alertmanagers == nil || s.verbose {
 			s.logger.Info("AlarmUpdate",
