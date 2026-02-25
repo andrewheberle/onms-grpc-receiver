@@ -24,6 +24,8 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 | --metrics.address     | Metrics listen address                                     |                |
 | --metrics.path        | Metrics path                                               | /metrics       |
 | --silent              | Disable all logging                                        |                |
+| --verbose             | Log all messages                                           |                |
+| --resolve.timeout     | Resolve timeout for alarms                                 | 5m             |
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
 
@@ -35,9 +37,11 @@ onms-grpc-receiver spog
 
 ## Alertmanager Integration
 
-There is a basic implementation of sending data to an upstream Alertmanager instance/cluster.
+There is a basic implementation of sending data to an downstream Alertmanager
+instance/cluster.
 
-This process sends a batch of alerts as they come in.
+This process queues incoming alarms and then sends them to Alertmanager(s)
+after a short delay (20s) or the number of alarms hits a threshold (10).
 
 You may either specify via one or more `--alertmanager.url` as follows:
 
@@ -45,17 +49,20 @@ You may either specify via one or more `--alertmanager.url` as follows:
 onms-grpc-receiver spog --alertmanager.url http://am-0:9091 --alertmanager.url http://am-1:9091 
 ```
 
-Or you may use SRV recork lookups using the `--alertmanager.srv` and optionally `--alertmanager.scheme` as follows
+Or you may use SRV recork lookups using the `--alertmanager.srv` and optionally
+`--alertmanager.scheme` as follows:
 
 ```sh
 onms-grpc-receiver spog --alertmanager.srv _http.alertmanager --alertmanager.scheme http
 ```
 
-The above options are mutually exclusive, in addition only basic validation of provided URLs is done, not that any Alertmanager is reachable on startup.
+The above options are mutually exclusive, in addition only basic validation of
+provided URLs is done, not that any Alertmanager is reachable on startup.
 
 ### Alert Names and Labels
 
-The alert name sent to Alertmanager is the OpenNMS "uei" value such as "uei.opennms.org/nodes/nodeDown" or "uei.opennms.org/nodes/dataCollectionFailed".
+The alert name sent to Alertmanager is the OpenNMS "uei" value such as
+"uei.opennms.org/nodes/nodeDown" or "uei.opennms.org/nodes/dataCollectionFailed".
 
 Labels are set as follows:
 

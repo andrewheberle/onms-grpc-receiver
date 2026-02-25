@@ -40,6 +40,8 @@ type ServiceSyncServer struct {
 	alarmTotal         *prometheus.CounterVec
 	alarmCount         *prometheus.GaugeVec
 	heartbeatTotal     *prometheus.CounterVec
+	alarmQueueDepth    prometheus.Gauge
+	alarmDropped       prometheus.Counter
 
 	// batching
 	alarmQueue   chan []instanceAlarm
@@ -95,12 +97,26 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		Help: "Total number of heartbeat updates seen from a Horizon instance.",
 	},
 		[]string{"instance_id"})
+	s.alarmQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "onmsgrpc_alarm_queue_depth",
+		Help: "Current number of alarm batches waiting in the queue.",
+	})
+	s.alarmDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "onmsgrpc_alarm_dropped_total",
+		Help: "Total number of alarms dropped due to the queue being full.",
+	})
 
 	// register metrics
 	s.registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		s.alertmanagerTotal, s.alertmanagerErrors, s.alarmTotal, s.alarmCount, s.heartbeatTotal,
+		s.alertmanagerTotal,
+		s.alertmanagerErrors,
+		s.alarmTotal,
+		s.alarmCount,
+		s.heartbeatTotal,
+		s.alarmQueueDepth,
+		s.alarmDropped,
 	)
 
 	return s, nil
@@ -195,8 +211,11 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		// enqueue - drop if full (best effort)
 		select {
 		case s.alarmQueue <- wrapped:
+			s.alarmQueueDepth.Set(float64(len(s.alarmQueue)))
 		default:
-			s.logger.Warn("alarm queue full, dropping batch", "alarmcount", len(alarms), "instance_id", id)
+			alarmcount := len(alarms)
+			s.logger.Warn("alarm queue full, dropping batch", "alarmcount", alarmcount, "instance_id", id)
+			s.alarmDropped.Add(float64(alarmcount))
 		}
 	}
 }
@@ -212,6 +231,7 @@ func (s *ServiceSyncServer) batchWorker() {
 			if len(batch) > 0 {
 				s.logger.Info("batchWorker: flushing on shutdown", "alarmcount", len(batch))
 				s.handleAlarms(batch)
+				s.alarmQueueDepth.Set(0)
 			}
 			return
 
@@ -221,6 +241,7 @@ func (s *ServiceSyncServer) batchWorker() {
 				if len(batch) > 0 {
 					s.logger.Info("batchWorker: flushing on close", "alarmcount", len(batch))
 					s.handleAlarms(batch)
+					s.alarmQueueDepth.Set(0)
 				}
 				return
 			}
@@ -231,6 +252,7 @@ func (s *ServiceSyncServer) batchWorker() {
 				s.logger.Info("batchWorker: flushing on size", "alarmcount", len(batch))
 				s.handleAlarms(batch)
 				batch = nil
+				s.alarmQueueDepth.Set(float64(len(s.alarmQueue)))
 
 				if !timer.Stop() {
 					<-timer.C
@@ -243,6 +265,7 @@ func (s *ServiceSyncServer) batchWorker() {
 				s.logger.Info("batchWorker: flushing on timer", "alarmcount", len(batch))
 				s.handleAlarms(batch)
 				batch = nil
+				s.alarmQueueDepth.Set(float64(len(s.alarmQueue)))
 			}
 			timer.Reset(s.batchMaxWait)
 		}
@@ -394,15 +417,17 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			return err
 		}
 
+		id := in.GetMonitoringInstance().GetInstanceId()
+		name := in.GetMonitoringInstance().GetInstanceName()
+
 		// increment heartbeat counter
-		s.heartbeatTotal.WithLabelValues(in.GetMonitoringInstance().GetInstanceId()).Inc()
+		s.heartbeatTotal.WithLabelValues(id).Inc()
 
 		// print message
 		s.logger.Info(in.GetMessage(),
 			slog.Group("instance",
-				"id", in.GetMonitoringInstance().GetInstanceId(),
-				"type", in.GetMonitoringInstance().GetInstanceType(),
-				"name", in.GetMonitoringInstance().GetInstanceName(),
+				"id", id,
+				"name", name,
 			),
 			"timestamp", in.GetTimestamp(),
 		)
@@ -416,15 +441,18 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 		// add heartbeat to list
 		labels := map[string]string{
 			"alertname":     "OpenNMSHeartbeat",
-			"instance_id":   in.GetMonitoringInstance().GetInstanceId(),
-			"instance_name": in.GetMonitoringInstance().GetInstanceName(),
-			"instance_type": in.GetMonitoringInstance().GetInstanceType(),
+			"instance_id":   id,
+			"instance_name": name,
 		}
+
+		now := time.Now()
 
 		hb := &models.PostableAlert{
 			Alert: models.Alert{
 				Labels: labels,
 			},
+			StartsAt: strfmt.DateTime(now),
+			EndsAt:   strfmt.DateTime(now.Add(s.resolveTimeout)),
 		}
 		s.logger.Debug("adding message to list", "message", hb)
 
