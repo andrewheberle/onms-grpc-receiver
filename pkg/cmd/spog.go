@@ -66,7 +66,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
 	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().DurationVar(&c.resolveTimeout, "resolve.timeout", time.Minute*5, "Resolve timeout for alarms")
-	cmd.Flags().DurationVar(&c.stvCacheTTL, "srv.ttl", time.Second*30, "TTL for resolved SRV records")
+	cmd.Flags().DurationVar(&c.srvCacheTTL, "srv.ttl", time.Second*30, "TTL for resolved SRV records")
 
 	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
