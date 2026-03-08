@@ -36,6 +36,7 @@ type spogCommand struct {
 	alertManagerSrv    string
 	urlMapping         map[string]string
 	resolveTimeout     time.Duration
+	srvCacheTTL        time.Duration
 
 	debug   bool
 	silent  bool
@@ -65,6 +66,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
 	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().DurationVar(&c.resolveTimeout, "resolve.timeout", time.Minute*5, "Resolve timeout for alarms")
+	cmd.Flags().DurationVar(&c.stvCacheTTL, "srv.ttl", time.Second*30, "TTL for resolved SRV records")
 
 	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
@@ -96,6 +98,7 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		server.WithLogger(c.logger),
 		server.WithURLMapping(c.urlMapping),
 		server.WithResolveTimeout(c.resolveTimeout),
+		server.WithSRVCacheTTL(c.srvCacheTTL),
 	}
 
 	// set up alertmanager via url
