@@ -1,6 +1,6 @@
 # OpenNMS gRPC Receiver
 
-This is a service that acts as a receiver for the [OpenNMS gRPC Exporter](https://docs.opennms.com/horizon/33/operation/deep-dive/grpc-exporter/grpc-exporter.html) and forwards alerts to the configured Altermanager instance(s).
+This is a service that acts as a server for the [OpenNMS gRPC Exporter](https://docs.opennms.com/horizon/33/operation/deep-dive/grpc-exporter/grpc-exporter.html) and forwards alerts to the configured Altermanager instance(s).
 
 ## Running via Docker
 
@@ -37,7 +37,7 @@ onms-grpc-receiver spog
 
 ## Alertmanager Integration
 
-There is a basic implementation of sending data to an downstream Alertmanager
+There is a basic implementation of sending data to a downstream Alertmanager
 instance/cluster.
 
 This process queues incoming alarms and then sends them to Alertmanager(s)
@@ -49,7 +49,7 @@ You may either specify via one or more `--alertmanager.url` as follows:
 onms-grpc-receiver spog --alertmanager.url http://am-0:9091 --alertmanager.url http://am-1:9091 
 ```
 
-Or you may use SRV recork lookups using the `--alertmanager.srv` and optionally
+Or you may use SRV record lookups using the `--alertmanager.srv` and optionally
 `--alertmanager.scheme` as follows:
 
 ```sh
