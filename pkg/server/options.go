@@ -56,9 +56,19 @@ func WithAlertmanagerUrl(list []string) ServiceSyncServerOption {
 	}
 }
 
+func WithSRVCacheTTL(d time.Duration) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.srvCacheTTL = d
+
+		return nil
+	}
+}
+
 func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.alertmanagers = func() ([]string, error) {
+		cache := &srvCache{}
+
+		resolve := func() ([]string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 			defer cancel()
 
@@ -67,12 +77,43 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 				return nil, err
 			}
 
-			list := make([]string, 0)
+			list := make([]string, 0, len(ams))
 			for _, am := range ams {
 				list = append(list, fmt.Sprintf("%s://%s/api/v2/alerts", scheme, net.JoinHostPort(am.Target, fmt.Sprint(am.Port))))
 			}
 
 			return list, nil
+		}
+
+		s.alertmanagers = func() ([]string, error) {
+			if s.srvCacheTTL == 0 {
+				return resolve()
+			}
+
+			if urls, fresh, stale := cache.get(); fresh {
+				return urls, nil
+			} else if stale {
+				if cache.markResolving() {
+					go func() {
+						urls, err := resolve()
+						if err != nil {
+							s.logger.Warn("background SRV re-resolve failed", "srv", srv, "error", err)
+							cache.clearResolving()
+							return
+						}
+						cache.set(urls, s.srvCacheTTL)
+					}()
+				}
+				return urls, nil
+			}
+
+			// Cache expired beyond stale window — resolve synchronously
+			urls, err := resolve()
+			if err != nil {
+				return nil, err
+			}
+			cache.set(urls, s.srvCacheTTL)
+			return urls, nil
 		}
 
 		return nil
