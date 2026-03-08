@@ -1,5 +1,7 @@
 # OpenNMS gRPC Receiver
 
+[![codecov](https://codecov.io/gh/andrewheberle/onms-grpc-receiver/graph/badge.svg?token=VSHIGURNMQ)](https://codecov.io/gh/andrewheberle/onms-grpc-receiver)
+
 This is a service that acts as a server for the [OpenNMS gRPC Exporter](https://docs.opennms.com/horizon/33/operation/deep-dive/grpc-exporter/grpc-exporter.html) and forwards alerts to the configured Altermanager instance(s).
 
 ## Running via Docker
@@ -26,6 +28,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 | --silent              | Disable all logging                                        |                |
 | --verbose             | Log all messages                                           |                |
 | --resolve.timeout     | Resolve timeout for alarms                                 | 5m             |
+| --srv.ttl             | TTL for cached SRV lookups                                 | 30s            |
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
 
