@@ -33,6 +33,7 @@ type ServiceSyncServer struct {
 	registry       *prometheus.Registry
 	verbose        bool
 	resolveTimeout time.Duration
+	srvCacheTTL    time.Duration
 
 	// metrics
 	alertmanagerTotal  *prometheus.CounterVec
@@ -143,6 +144,9 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 		// default based on upstream
 		resolveTimeout: time.Minute * 5,
 
+		// cache SRV records for 30s by default
+		srvCacheTTL: 30 * time.Second,
+		
 		// batching
 		batchMaxSize: 10,
 		batchMaxWait: 20 * time.Second,
