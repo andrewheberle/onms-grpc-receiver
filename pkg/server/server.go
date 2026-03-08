@@ -43,6 +43,7 @@ type ServiceSyncServer struct {
 	heartbeatTotal     *prometheus.CounterVec
 	alarmQueueDepth    prometheus.Gauge
 	alarmDropped       prometheus.Counter
+	amLookupErrors    prometheus.Counter
 
 	// batching
 	alarmQueue   chan []instanceAlarm
@@ -106,6 +107,10 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		Name: "onmsgrpc_alarm_dropped_total",
 		Help: "Total number of alarms dropped due to the queue being full.",
 	})
+	s.amLookupErrors = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "onmsgrpc_alertmanager_lookup_error_total",
+		Help: "Total number of errors during lookups of Alertmanagers.",
+	})
 
 	// register metrics
 	s.registry.MustRegister(
@@ -118,6 +123,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		s.heartbeatTotal,
 		s.alarmQueueDepth,
 		s.alarmDropped,
+		s.amLookupErrors,
 	)
 
 	return s, nil
@@ -411,7 +417,6 @@ func (s *ServiceSyncServer) EventUpdate(stream grpc.BidiStreamingServer[pb.Event
 }
 
 func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.HeartBeat, emptypb.Empty]) error {
-
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
@@ -491,6 +496,7 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 
 	ams, err := s.alertmanagers()
 	if err != nil {
+		s.amLookupErrors.Inc()
 		return err
 	}
 
