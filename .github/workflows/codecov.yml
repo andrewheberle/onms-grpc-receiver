@@ -6,6 +6,8 @@ on:
 jobs:
   test:
     name: Run tests and collect coverage
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
