@@ -7,7 +7,7 @@ require (
 	github.com/andrewheberle/simplecommand/vipercommand v0.5.1
 	github.com/bep/simplecobra v0.7.0
 	github.com/cloudflare/certinel v0.4.1
-	github.com/go-openapi/strfmt v0.26.0
+	github.com/go-openapi/strfmt v0.26.1
 	github.com/oklog/run v1.2.0
 	github.com/prometheus/alertmanager v0.31.1
 	github.com/prometheus/client_golang v1.23.2
