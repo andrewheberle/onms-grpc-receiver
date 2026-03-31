@@ -34,6 +34,3 @@ jobs:
       - uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: ./dist/checksums.txt
-      - uses: actions/attest-build-provenance@v4
-        with:
-          subject-checksums: ./dist/digests.txt
