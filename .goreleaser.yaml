@@ -42,7 +42,7 @@ signs:
       - sign-blob
       - "--bundle=${signature}"
       - "${artifact}"
-      - "--yes" # needed on cosign 2.0.0+
+      - "--yes"
     artifacts: checksum
     output: true
 
@@ -50,19 +50,15 @@ sboms:
   - artifacts: binary
     disable: false
 
-snapshot:
-  version_template: "{{ incpatch .Version }}"
-
 dockers_v2:
   - images:
-      - "ghcr.io/andrewheberle/{{ .ProjectName }}"
+      - "ghcr.io/andrewheberle/onms-grpc-receiver"
     ids:
-      - "{{ .ProjectName }}"
+      - onms-grpc-receiver
     tags:
-      - "{{ .Version }}"
-      - "{{ .Major }}"
-      - "{{ .Major }}.{{ .Minor }}"
-      - latest
+      - "v{{ .Version }}"
+      - "{{ if .IsNightly }}nightly{{ end }}"
+      - "{{ if not .IsNightly }}latest{{ end }}"
     sbom: "{{ not .IsSnapshot }}"
     disable: false
     platforms:
