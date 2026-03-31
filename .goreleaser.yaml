@@ -1,0 +1,84 @@
+project_name: onms-grpc-receiver
+
+version: 2
+
+builds:
+  - id: onms-grpc-receiver
+    binary: onms-grpc-receiver
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    main: ./cmd/onms-grpc-receiver
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    tags:
+      - netgo
+    ldflags:
+      - -s -w -X github.com/andrewheberle/onms-grpc-receiver/pkg/cmd.Version={{ .Version }} -X main.Date={{ .CommitDate }}
+
+gomod:
+  proxy: true
+
+changelog:
+  use: github-native
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  draft: false
+  make_latest: true
+  replace_existing_artifacts: true
+  prerelease: auto
+
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+sboms:
+  - artifacts: binary
+    disable: false
+
+dockers_v2:
+  - images:
+      - "ghcr.io/andrewheberle/onms-grpc-receiver"
+    ids:
+      - onms-grpc-receiver
+    tags:
+      - "v{{ .Version }}"
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    sbom: true
+    disable: false
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.description": "An OpenNMS gRPC receiver"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.name": "{{ .ProjectName }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.source": "{{ .GitURL }}"
+
+docker_digest:
+  name_template: "digests.txt"
+
+docker_signs:
+  - cmd: cosign
+    output: true
+    args:
+      - "sign"
+      - "${artifact}"
+      - "--yes"
