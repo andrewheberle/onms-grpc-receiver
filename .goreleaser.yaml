@@ -71,6 +71,8 @@ dockers_v2:
       "org.opencontainers.image.revision": "{{ .FullCommit }}"
       "org.opencontainers.image.version": "{{ .Version }}"
       "org.opencontainers.image.source": "{{ .GitURL }}"
+    annotations:
+      "org.opencontainers.image.description": "An OpenNMS gRPC receiver"
 
 docker_digest:
   name_template: "digests.txt"
