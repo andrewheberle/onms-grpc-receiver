@@ -1,14 +1,15 @@
 name: build
 
 on:
-  pull_request:
   push:
     branches:
       - main
 
 permissions:
-  contents: read
-  id-token: write
+  contents: read # needed to checkout code
+  id-token: write # needed for keyless signing
+  packages: write # needed for ghcr access
+  attestations: write # needed for provenance
 
 jobs:
   build:
@@ -21,7 +22,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test -v ./...
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: sigstore/cosign-installer@v4.1.0
@@ -31,3 +31,9 @@ jobs:
           distribution: goreleaser
           version: "~> v2"
           args: release --clean --snapshot
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: ./dist/checksums.txt
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: ./dist/digests.txt

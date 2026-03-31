@@ -58,9 +58,8 @@ dockers_v2:
       - onms-grpc-receiver
     tags:
       - "v{{ .Version }}"
-      - "{{ if .IsNightly }}nightly{{ end }}"
-      - "{{ if not .IsNightly }}latest{{ end }}"
-    sbom: "{{ not .IsSnapshot }}"
+      - "{{ if not .IsSnapshot }}latest{{ end }}"
+    sbom: true
     disable: false
     platforms:
       - linux/amd64
