@@ -9,6 +9,7 @@ builds:
       - linux
     goarch:
       - amd64
+      - arm64
     env:
       - CGO_ENABLED=0
     flags:
@@ -63,6 +64,7 @@ dockers_v2:
     disable: false
     platforms:
       - linux/amd64
+      - linux/arm64
     labels:
       "org.opencontainers.image.description": "An OpenNMS gRPC receiver"
       "org.opencontainers.image.created": "{{ .Date }}"
