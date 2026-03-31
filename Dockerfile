@@ -3,5 +3,5 @@ ARG TARGETPLATFORM
 ENV ONMS_GRPC_ADDRESS=":8080" ONMS_GRPC_METRICS_ADDRESS=":8081"
 EXPOSE 8080
 ENTRYPOINT [ "/usr/bin/onms-grpc-receiver", "spog" ]
-COPY $TARGETPLATFORM/myprogram /usr/bin/
+COPY $TARGETPLATFORM/onms-grpc-receiver /usr/bin/
 
