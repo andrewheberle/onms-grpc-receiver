@@ -54,6 +54,9 @@ OpenNMS Horizon instances may be handled as all Heartbeat and AlarmUpdate messag
 
 	rootCmd.Command.SubCommands = []simplecobra.Commander{
 		spog,
+		&versionCommand{
+			Command: simplecommand.New("version", "Print version information"),
+		},
 	}
 
 	x, err := simplecobra.New(rootCmd)
