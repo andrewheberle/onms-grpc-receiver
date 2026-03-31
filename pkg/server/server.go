@@ -43,7 +43,7 @@ type ServiceSyncServer struct {
 	heartbeatTotal     *prometheus.CounterVec
 	alarmQueueDepth    prometheus.Gauge
 	alarmDropped       prometheus.Counter
-	amLookupErrors    prometheus.Counter
+	amLookupErrors     prometheus.Counter
 
 	// batching
 	alarmQueue   chan []instanceAlarm
@@ -152,7 +152,7 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 
 		// cache SRV records for 30s by default
 		srvCacheTTL: 30 * time.Second,
-		
+
 		// batching
 		batchMaxSize: 10,
 		batchMaxWait: 20 * time.Second,
@@ -201,8 +201,10 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		}
 
 		s.logger.Info("AlarmUpdate",
-			"instance_id", id,
-			"name", name,
+			slog.Group("instance",
+				"id", id,
+				"name", name,
+			),
 			"snapshot", isSnapshot,
 			"alarmcount", len(alarms),
 		)
@@ -294,7 +296,11 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 			s.logger.Info("AlarmUpdate",
 				"alarm_id", alarm.GetId(),
 				"uei", alarm.GetUei(),
-				slog.Group("NodeCriteria",
+				slog.Group("instance",
+					"id", id,
+					"name", name,
+				),
+				slog.Group("node_criteria",
 					"id", alarm.GetNodeCriteria().GetId(),
 					"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
 					"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
