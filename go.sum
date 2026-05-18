@@ -2,6 +2,8 @@ github.com/andrewheberle/simplecommand v0.5.1 h1:zgTPMj2hf5baFE09fW/qb4VNhZL8v7T
 github.com/andrewheberle/simplecommand v0.5.1/go.mod h1:XQOLdO2a9/ZQMl5+MuBTeBzct2vsR3nIrJD3fRJlNmI=
 github.com/andrewheberle/simplecommand/vipercommand v0.5.1 h1:CIuVZr4lujF7e2cFTKSAQax1aWf//nPJUSia6AD9xrY=
 github.com/andrewheberle/simplecommand/vipercommand v0.5.1/go.mod h1:wXEJI9P4ImKMXvRRe4LS9DMRNjLlXUqdOXsIwaUvpqI=
+github.com/andrewheberle/simplecommand/vipercommand v0.5.2 h1:rke7qupOXPTwjMF6ti683NApi/CVEjaz127Nn2K1GRU=
+github.com/andrewheberle/simplecommand/vipercommand v0.5.2/go.mod h1:tvPdvy+O8zpcawmSAmYci8+tTmg3Dzi7U1VKnpBPk9Y=
 github.com/andrewheberle/simpleviper v1.2.0 h1:pg+4BF5MmxQ8r7I3UmWz6w56z0akYyQ1ChMjudvrZWc=
 github.com/andrewheberle/simpleviper v1.2.0/go.mod h1:h27fll0wuI9Q3m5YfqFBnSy3oqCreQLBBnw0Yro+IGE=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
