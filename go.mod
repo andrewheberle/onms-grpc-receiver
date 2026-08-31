@@ -1,11 +1,11 @@
 module github.com/andrewheberle/onms-grpc-receiver
 
-go 1.25.4
+go 1.26
 
 require (
 	github.com/andrewheberle/simplecommand v0.5.1
 	github.com/andrewheberle/simplecommand/vipercommand v0.5.1
-	github.com/bep/simplecobra v0.7.0
+	github.com/bep/simplecobra v0.8.0
 	github.com/cloudflare/certinel v0.4.1
 	github.com/go-openapi/strfmt v0.26.1
 	github.com/oklog/run v1.2.0
