@@ -15,6 +15,8 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 | Flag                  | Decription                                                 | Default        |
 |-----------------------|------------------------------------------------------------|----------------|
 | --address             | Service gRPC listen address                                | localhost:8080 |
+| --alert.annotations   | Annotations added to all alerts                            |                |
+| --alert.labels        | Labels added to all alerts                                 |                |
 | --alertmanager.scheme | Alertmanager scheme (http/https) when SRV records are used | http           |
 | --alertmanager.srv    | Alertmanager SRV Record                                    |                |
 | --alertmanager.url    | Alertmanager URL                                           |                |
@@ -115,6 +117,43 @@ used as the `runbook_url` annotation and the full text as the
 `operator_instructions` annotation. Links in HTML, such as
 `<a href="https://wiki.example.com/runbooks/node-down">the runbook</a>`, are
 used in preference to URLs in the text.
+
+### Additional Labels and Annotations
+
+Labels and annotations may be added to all alerts, including the
+`OpenNMSHeartbeat` alert, as follows:
+
+```sh
+onms-grpc-receiver spog --alert.labels env=prod,team=noc --alert.annotations dashboard=https://grafana/d/onms
+```
+
+Or via environment variables:
+
+```sh
+export ONMS_GRPC_ALERT_LABELS="env=prod,team=noc"
+export ONMS_GRPC_ALERT_ANNOTATIONS="dashboard=https://grafana/d/onms"
+```
+
+Entries are separated by commas, so an entry whose value contains a comma must
+be quoted as a whole:
+
+```sh
+onms-grpc-receiver spog --alert.annotations '"note=Call the NOC, then escalate",dashboard=https://grafana/d/onms'
+```
+
+The receiver will not start if a label or annotation:
+
+* Has the same name as a built-in label or annotation listed above, even those
+  that are only set on some alerts, such as `service` or `runbook_url`.
+  Names are case-sensitive, so `Severity` does not clash with `severity`.
+* Has a name that is not a valid Prometheus label name (`[a-zA-Z_][a-zA-Z0-9_]*`)
+  or starts with `__`, which is reserved.
+* Has an empty value.
+
+Labels form the identity of an alert in Alertmanager, so adding, removing or
+changing an additional label turns every firing alert into a new alert, with the
+previous alert expiring after 5 minutes. Changes to additional annotations do
+not.
 
 ### Alarm link/URL
 

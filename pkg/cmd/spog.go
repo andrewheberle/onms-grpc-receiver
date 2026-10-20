@@ -45,6 +45,9 @@ type spogCommand struct {
 
 	headers map[string]string
 
+	alertLabels      map[string]string
+	alertAnnotations map[string]string
+
 	*vipercommand.Command
 }
 
@@ -65,6 +68,8 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.alertManagerSrv, "alertmanager.srv", "", "Alertmanager SRV Record")
 	cmd.MarkFlagsMutuallyExclusive("alertmanager.url", "alertmanager.srv")
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
+	cmd.Flags().StringToStringVar(&c.alertLabels, "alert.labels", map[string]string{}, "Labels added to all alerts")
+	cmd.Flags().StringToStringVar(&c.alertAnnotations, "alert.annotations", map[string]string{}, "Annotations added to all alerts")
 	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().DurationVar(&c.resolveTimeout, "resolve.timeout", time.Minute*5, "Resolve timeout for alarms")
 	cmd.Flags().DurationVar(&c.srvCacheTTL, "srv.ttl", time.Second*30, "TTL for resolved SRV records")
@@ -101,6 +106,8 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		server.WithURLMapping(c.urlMapping),
 		server.WithResolveTimeout(c.resolveTimeout),
 		server.WithSRVCacheTTL(c.srvCacheTTL),
+		server.WithAlertLabels(c.alertLabels),
+		server.WithAlertAnnotations(c.alertAnnotations),
 	}
 
 	// set up alertmanager via url

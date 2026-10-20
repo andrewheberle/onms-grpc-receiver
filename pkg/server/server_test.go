@@ -2,15 +2,19 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/prometheus/alertmanager/api/v2/models"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestHandleAlarms(t *testing.T) {
@@ -322,5 +326,211 @@ func TestHandleAlarmsRunbookURL(t *testing.T) {
 				t.Errorf("labels = %v, want no runbook_url label", got[0].Labels)
 			}
 		})
+	}
+}
+
+// fullAlarm returns an alarm with every field used for labels and annotations
+// set
+func fullAlarm(now time.Time) *pb.Alarm {
+	return pb.Alarm_builder{
+		Id:  25,
+		Uei: "uei.opennms.org/nodes/nodeLostService",
+		NodeCriteria: pb.NodeCriteria_builder{
+			Id:            12,
+			ForeignSource: "customer-a",
+			ForeignId:     "1234",
+			NodeLabel:     "router1",
+			Location:      "Perth",
+		}.Build(),
+		IpAddress:            "10.0.0.1",
+		ServiceName:          "ICMP",
+		Severity:             uint32(pb.Severity_MAJOR),
+		FirstEventTime:       uint64(now.UnixMilli()),
+		LastEventTime:        uint64(now.UnixMilli()),
+		LogMessage:           "ICMP outage identified on interface 10.0.0.1.",
+		Description:          "<p>A ICMP outage was identified.</p>",
+		OperatorInstructions: "Check the router, see https://wiki.example.com/runbooks/icmp",
+	}.Build()
+}
+
+func TestHandleAlarmsAlertLabelsAndAnnotations(t *testing.T) {
+	now := time.Now()
+
+	var got []models.PostableAlert
+	am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("could not decode alerts: %v", err)
+		}
+	}))
+	defer am.Close()
+
+	s, err := NewServiceSyncServer(
+		WithAlertmanagerUrl([]string{am.URL}),
+		WithAlertLabels(map[string]string{"env": "prod", "team": "noc"}),
+		WithAlertAnnotations(map[string]string{"dashboard": "https://grafana/d/onms"}),
+	)
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	s.handleAlarms([]instanceAlarm{
+		{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"},
+		{alarm: pb.Alarm_builder{
+			Id:             2,
+			Uei:            "uei.opennms.org/nodes/nodeDown",
+			Severity:       uint32(pb.Severity_MAJOR),
+			FirstEventTime: uint64(now.UnixMilli()),
+			LastEventTime:  uint64(now.UnixMilli()),
+		}.Build(), now: now, instanceName: "OpenNMS"},
+	})
+
+	if len(got) != 2 {
+		t.Fatalf("handleAlarms() sent %d alerts, want 2", len(got))
+	}
+	sort.Slice(got, func(i, j int) bool { return got[i].Labels["alarm_id"] > got[j].Labels["alarm_id"] })
+
+	wantLabels := map[string]string{
+		"alertname":      "uei.opennms.org/nodes/nodeLostService",
+		"alarm_id":       "25",
+		"node_name":      "router1",
+		"foreign_source": "customer-a",
+		"instance_name":  "OpenNMS",
+		"severity":       "major",
+		"service":        "ICMP",
+		"ip_address":     "10.0.0.1",
+		"site":           "Perth",
+		"env":            "prod",
+		"team":           "noc",
+	}
+	if !reflect.DeepEqual(map[string]string(got[0].Labels), wantLabels) {
+		t.Errorf("labels = %v, want %v", got[0].Labels, wantLabels)
+	}
+
+	wantAnnotations := map[string]string{
+		"summary":               "ICMP outage identified on interface 10.0.0.1.",
+		"description":           "A ICMP outage was identified.",
+		"runbook_url":           "https://wiki.example.com/runbooks/icmp",
+		"operator_instructions": "Check the router, see https://wiki.example.com/runbooks/icmp",
+		"dashboard":             "https://grafana/d/onms",
+	}
+	if !reflect.DeepEqual(map[string]string(got[0].Annotations), wantAnnotations) {
+		t.Errorf("annotations = %v, want %v", got[0].Annotations, wantAnnotations)
+	}
+
+	// an alarm with no annotations of its own still gets the extra ones
+	if got[1].Labels["env"] != "prod" || got[1].Labels["team"] != "noc" {
+		t.Errorf("labels = %v, want env and team", got[1].Labels)
+	}
+	if !reflect.DeepEqual(map[string]string(got[1].Annotations), map[string]string{"dashboard": "https://grafana/d/onms"}) {
+		t.Errorf("annotations = %v, want only dashboard", got[1].Annotations)
+	}
+}
+
+// heartbeatStream is a minimal HeartBeatUpdate stream that returns the given
+// heartbeats then io.EOF
+type heartbeatStream struct {
+	grpc.BidiStreamingServer[pb.HeartBeat, emptypb.Empty]
+	heartbeats []*pb.HeartBeat
+}
+
+func (h *heartbeatStream) Recv() (*pb.HeartBeat, error) {
+	if len(h.heartbeats) == 0 {
+		return nil, io.EOF
+	}
+	hb := h.heartbeats[0]
+	h.heartbeats = h.heartbeats[1:]
+
+	return hb, nil
+}
+
+func sendHeartbeat(t *testing.T, opts ...ServiceSyncServerOption) []models.PostableAlert {
+	t.Helper()
+
+	var got []models.PostableAlert
+	am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("could not decode alerts: %v", err)
+		}
+	}))
+	defer am.Close()
+
+	s, err := NewServiceSyncServer(append([]ServiceSyncServerOption{WithAlertmanagerUrl([]string{am.URL})}, opts...)...)
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	stream := &heartbeatStream{heartbeats: []*pb.HeartBeat{pb.HeartBeat_builder{
+		MonitoringInstance: pb.MonitoringInstance_builder{
+			InstanceId:   "6f8a7c1e-uuid",
+			InstanceName: "OpenNMS",
+		}.Build(),
+		Message: "heartbeat",
+	}.Build()}}
+	if err := s.HeartBeatUpdate(stream); err != nil {
+		t.Fatalf("HeartBeatUpdate() error = %v", err)
+	}
+
+	return got
+}
+
+func TestHeartBeatUpdateAlertLabelsAndAnnotations(t *testing.T) {
+	got := sendHeartbeat(t,
+		WithAlertLabels(map[string]string{"env": "prod"}),
+		WithAlertAnnotations(map[string]string{"dashboard": "https://grafana/d/onms"}),
+	)
+
+	if len(got) != 1 {
+		t.Fatalf("HeartBeatUpdate() sent %d alerts, want 1", len(got))
+	}
+
+	wantLabels := map[string]string{
+		"alertname":     "OpenNMSHeartbeat",
+		"instance_name": "OpenNMS",
+		"env":           "prod",
+	}
+	if !reflect.DeepEqual(map[string]string(got[0].Labels), wantLabels) {
+		t.Errorf("labels = %v, want %v", got[0].Labels, wantLabels)
+	}
+	if !reflect.DeepEqual(map[string]string(got[0].Annotations), map[string]string{"dashboard": "https://grafana/d/onms"}) {
+		t.Errorf("annotations = %v, want only dashboard", got[0].Annotations)
+	}
+}
+
+// TestBuiltinNames ensures every label and annotation the receiver can set
+// itself is listed as built-in, so it is rejected as an alert label or
+// annotation
+func TestBuiltinNames(t *testing.T) {
+	now := time.Now()
+
+	var got []models.PostableAlert
+	am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("could not decode alerts: %v", err)
+		}
+	}))
+	defer am.Close()
+
+	s, err := NewServiceSyncServer(WithAlertmanagerUrl([]string{am.URL}))
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	s.handleAlarms([]instanceAlarm{{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"}})
+	if len(got) != 1 {
+		t.Fatalf("handleAlarms() sent %d alerts, want 1", len(got))
+	}
+	alerts := append(got, sendHeartbeat(t)...)
+
+	for _, a := range alerts {
+		for name := range a.Labels {
+			if !slices.Contains(builtinLabels, name) {
+				t.Errorf("label %q is not listed in builtinLabels", name)
+			}
+		}
+		for name := range a.Annotations {
+			if !slices.Contains(builtinAnnotations, name) {
+				t.Errorf("annotation %q is not listed in builtinAnnotations", name)
+			}
+		}
 	}
 }
