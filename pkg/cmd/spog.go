@@ -37,6 +37,7 @@ type spogCommand struct {
 	urlMapping         map[string]string
 	resolveTimeout     time.Duration
 	srvCacheTTL        time.Duration
+	maxRecvMsgSize     int
 
 	debug   bool
 	silent  bool
@@ -67,6 +68,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().DurationVar(&c.resolveTimeout, "resolve.timeout", time.Minute*5, "Resolve timeout for alarms")
 	cmd.Flags().DurationVar(&c.srvCacheTTL, "srv.ttl", time.Second*30, "TTL for resolved SRV records")
+	cmd.Flags().IntVar(&c.maxRecvMsgSize, "grpc.max-recv-size", 64*1024*1024, "Maximum gRPC message size in bytes that can be received")
 
 	cmd.Flags().BoolVar(&c.debug, "debug", false, "Enable debug logging")
 	cmd.Flags().BoolVar(&c.silent, "silent", false, "Disable all logging")
@@ -173,6 +175,10 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 		c.opts = append(c.opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
+
+	// alarm snapshots contain every alarm in a single message, so allow for
+	// messages larger than the 4MiB gRPC default
+	c.opts = append(c.opts, grpc.MaxRecvMsgSize(c.maxRecvMsgSize))
 
 	// create register and add server to run group
 	grpcServer := grpc.NewServer(c.opts...)

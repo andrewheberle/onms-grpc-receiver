@@ -20,6 +20,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:latest --alertm
 | --alertmanager.url    | Alertmanager URL                                           |                |
 | --cert                | TLS Certificate                                            |                |
 | --debug               | Enable debug logging                                       |                |
+| --grpc.max-recv-size  | Maximum gRPC message size in bytes that can be received    | 67108864       |
 | --headers             | Custom headers                                             |                |
 | --key                 | TLS Key                                                    |                |
 | --map.url             | Map Horizon instance ID's to URLs                          |                |
