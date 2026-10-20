@@ -92,11 +92,29 @@ only unique within an instance.
 Human readable details of the alarm are added as annotations, with any HTML
 converted to plain text:
 
-| OpenNMS Alarm Field   | Alertmanager Annotation | Notes                |
-|-----------------------|-------------------------|----------------------|
-| Log Message           | summary                 | Only present if set  |
-| Description           | description             | Only present if set  |
-| Operator Instructions | operator_instructions   | Only present if set  |
+| OpenNMS Alarm Field   | Alertmanager Annotation | Notes                                                      |
+|-----------------------|-------------------------|------------------------------------------------------------|
+| Log Message           | summary                 | Only present if set                                        |
+| Description           | description             | Only present if set                                        |
+| Operator Instructions | runbook_url             | The first http(s) URL in the operator instructions, if any |
+| Operator Instructions | operator_instructions   | Only present if set to more than just a URL                |
+
+The operator instructions of an event may be used to provide a runbook for
+alarms of that type. For example, with the following in the event definition
+the alert has a `runbook_url` annotation of
+`https://wiki.example.com/runbooks/node-down` and no `operator_instructions`
+annotation:
+
+```xml
+<operinstruct>https://wiki.example.com/runbooks/node-down</operinstruct>
+```
+
+When the operator instructions contain other text, such as
+`Check the router, see https://wiki.example.com/runbooks/node-down`, the URL is
+used as the `runbook_url` annotation and the full text as the
+`operator_instructions` annotation. Links in HTML, such as
+`<a href="https://wiki.example.com/runbooks/node-down">the runbook</a>`, are
+used in preference to URLs in the text.
 
 ### Alarm link/URL
 

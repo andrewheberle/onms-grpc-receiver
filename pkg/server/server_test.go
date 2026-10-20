@@ -235,3 +235,92 @@ func TestHandleAlarmsOmitsEmptyAnnotations(t *testing.T) {
 		t.Errorf("labels = %v, want no foreign_source", got[0].Labels)
 	}
 }
+
+func TestOperatorInstructions(t *testing.T) {
+	tests := []struct {
+		name         string
+		instructions string
+		wantRunbook  string
+		wantText     string
+	}{
+		{"empty", "", "", ""},
+		{"empty html", "<p> </p>", "", ""},
+		{"text only", "<p>Check the router.</p>", "", "Check the router."},
+		{"plain url", "https://wiki.example.com/runbooks/node-down", "https://wiki.example.com/runbooks/node-down", ""},
+		{"plain url with whitespace", "\n  https://wiki.example.com/runbooks/node-down\n", "https://wiki.example.com/runbooks/node-down", ""},
+		{"url in paragraph", "<p>https://wiki.example.com/runbooks/node-down</p>", "https://wiki.example.com/runbooks/node-down", ""},
+		{"link with url as text", `<a href="https://wiki.example.com/runbooks/node-down">https://wiki.example.com/runbooks/node-down</a>`, "https://wiki.example.com/runbooks/node-down", ""},
+		{"url in text", "Restart the service, see https://wiki.example.com/runbooks/svc.", "https://wiki.example.com/runbooks/svc", "Restart the service, see https://wiki.example.com/runbooks/svc."},
+		{"html link", `<p>Check <a href="https://wiki.example.com/runbooks/svc?a=1&amp;b=2">the runbook</a> first</p>`, "https://wiki.example.com/runbooks/svc?a=1&b=2", "Check the runbook first"},
+		{"first url wins", "See http://one.example.com/a or http://two.example.com/b", "http://one.example.com/a", "See http://one.example.com/a or http://two.example.com/b"},
+		{"url in brackets", "Check the runbook (https://wiki.example.com/runbooks/svc)", "https://wiki.example.com/runbooks/svc", "Check the runbook (https://wiki.example.com/runbooks/svc)"},
+		{"non http link ignored", `<a href="mailto:noc@example.com">Email the NOC</a>`, "", "Email the NOC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRunbook, gotText := operatorInstructions(tt.instructions)
+			if gotRunbook != tt.wantRunbook {
+				t.Errorf("operatorInstructions() runbook = %q, want %q", gotRunbook, tt.wantRunbook)
+			}
+			if gotText != tt.wantText {
+				t.Errorf("operatorInstructions() text = %q, want %q", gotText, tt.wantText)
+			}
+		})
+	}
+}
+
+func TestHandleAlarmsRunbookURL(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name         string
+		instructions string
+		want         map[string]string
+	}{
+		{"url only", "https://wiki.example.com/runbooks/node-down", map[string]string{
+			"runbook_url": "https://wiki.example.com/runbooks/node-down",
+		}},
+		{"url and text", `<p>Check <a href="https://wiki.example.com/runbooks/node-down">the runbook</a></p>`, map[string]string{
+			"runbook_url":           "https://wiki.example.com/runbooks/node-down",
+			"operator_instructions": "Check the runbook",
+		}},
+		{"text only", "<p>Check the router.</p>", map[string]string{
+			"operator_instructions": "Check the router.",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []models.PostableAlert
+			am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+					t.Errorf("could not decode alerts: %v", err)
+				}
+			}))
+			defer am.Close()
+
+			s, err := NewServiceSyncServer(WithAlertmanagerUrl([]string{am.URL}))
+			if err != nil {
+				t.Fatalf("NewServiceSyncServer() error = %v", err)
+			}
+
+			s.handleAlarms([]instanceAlarm{{alarm: pb.Alarm_builder{
+				Id:                   1,
+				Uei:                  "uei.opennms.org/nodes/nodeDown",
+				Severity:             uint32(pb.Severity_MAJOR),
+				FirstEventTime:       uint64(now.UnixMilli()),
+				LastEventTime:        uint64(now.UnixMilli()),
+				OperatorInstructions: tt.instructions,
+			}.Build(), now: now, instanceName: "OpenNMS"}})
+
+			if len(got) != 1 {
+				t.Fatalf("handleAlarms() sent %d alerts, want 1", len(got))
+			}
+			if !reflect.DeepEqual(map[string]string(got[0].Annotations), tt.want) {
+				t.Errorf("annotations = %v, want %v", got[0].Annotations, tt.want)
+			}
+			if _, ok := got[0].Labels["runbook_url"]; ok {
+				t.Errorf("labels = %v, want no runbook_url label", got[0].Labels)
+			}
+		})
+	}
+}

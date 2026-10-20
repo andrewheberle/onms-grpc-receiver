@@ -395,7 +395,11 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 		if description := plainText(alarm.GetDescription()); description != "" {
 			annotations["description"] = description
 		}
-		if instructions := plainText(alarm.GetOperatorInstructions()); instructions != "" {
+		runbook, instructions := operatorInstructions(alarm.GetOperatorInstructions())
+		if runbook != "" {
+			annotations["runbook_url"] = runbook
+		}
+		if instructions != "" {
 			annotations["operator_instructions"] = instructions
 		}
 
@@ -580,6 +584,51 @@ func plainText(s string) string {
 	s = htmlTag.ReplaceAllString(s, " ")
 
 	return strings.Join(strings.Fields(html.UnescapeString(s)), " ")
+}
+
+var (
+	htmlLink = regexp.MustCompile(`(?i)<a\s[^>]*href\s*=\s*["']([^"']+)["']`)
+	plainURL = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
+)
+
+// operatorInstructions splits the operator instructions of an alarm into the
+// first http(s) URL they contain, for use as a runbook URL, and their plain
+// text. The text is empty when the instructions were only the URL.
+func operatorInstructions(s string) (runbook, text string) {
+	text = plainText(s)
+
+	// prefer a link in the HTML, as its URL is lost from the plain text
+	for _, m := range htmlLink.FindAllStringSubmatch(s, -1) {
+		if u := strings.TrimSpace(html.UnescapeString(m[1])); plainURL.FindString(u) == u {
+			runbook = u
+			break
+		}
+	}
+
+	if runbook == "" {
+		runbook = trimURL(plainURL.FindString(text))
+	}
+
+	if text == runbook {
+		text = ""
+	}
+
+	return runbook, text
+}
+
+// trimURL removes trailing punctuation that is likely part of the sentence
+// containing a URL rather than the URL itself
+func trimURL(u string) string {
+	for {
+		trimmed := strings.TrimRight(u, ".,;:!?")
+		if strings.HasSuffix(trimmed, ")") && strings.Count(trimmed, "(") < strings.Count(trimmed, ")") {
+			trimmed = strings.TrimSuffix(trimmed, ")")
+		}
+		if trimmed == u {
+			return u
+		}
+		u = trimmed
+	}
 }
 
 func inmap(k string, m map[string]string) string {
