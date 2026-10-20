@@ -8,6 +8,7 @@ import (
 	"html"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -37,6 +38,10 @@ type ServiceSyncServer struct {
 	resolveTimeout time.Duration
 	srvCacheTTL    time.Duration
 
+	// labels and annotations added to all alerts
+	alertLabels      map[string]string
+	alertAnnotations map[string]string
+
 	// metrics
 	alertmanagerTotal  *prometheus.CounterVec
 	alertmanagerErrors *prometheus.CounterVec
@@ -57,6 +62,30 @@ type ServiceSyncServer struct {
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
+
+var (
+	// builtinLabels are the labels the receiver may set on alerts itself
+	builtinLabels = []string{
+		"alertname",
+		"alarm_id",
+		"node_name",
+		"foreign_source",
+		"instance_name",
+		"severity",
+		"service",
+		"ip_address",
+		"site",
+	}
+
+	// builtinAnnotations are the annotations the receiver may set on alerts
+	// itself
+	builtinAnnotations = []string{
+		"summary",
+		"description",
+		"runbook_url",
+		"operator_instructions",
+	}
+)
 
 type instanceAlarm struct {
 	alarm        *pb.Alarm
@@ -403,6 +432,10 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 			annotations["operator_instructions"] = instructions
 		}
 
+		// add configured labels and annotations
+		maps.Copy(labels, s.alertLabels)
+		maps.Copy(annotations, s.alertAnnotations)
+
 		alert := models.Alert{
 			Labels: labels,
 		}
@@ -481,6 +514,10 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			"alertname":     "OpenNMSHeartbeat",
 			"instance_name": name,
 		}
+		maps.Copy(labels, s.alertLabels)
+
+		annotations := make(map[string]string)
+		maps.Copy(annotations, s.alertAnnotations)
 
 		now := time.Now()
 
@@ -488,8 +525,9 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			Alert: models.Alert{
 				Labels: labels,
 			},
-			StartsAt: strfmt.DateTime(now),
-			EndsAt:   strfmt.DateTime(now.Add(s.resolveTimeout)),
+			Annotations: annotations,
+			StartsAt:    strfmt.DateTime(now),
+			EndsAt:      strfmt.DateTime(now.Add(s.resolveTimeout)),
 		}
 		s.logger.Debug("adding message to list", "message", hb)
 
