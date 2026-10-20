@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -359,9 +361,7 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 		labels := map[string]string{
 			"alertname":     alarm.GetUei(),
 			"alarm_id":      fmt.Sprint(alarm.GetId()),
-			"node_id":       fmt.Sprint(alarm.GetNodeCriteria().GetId()),
 			"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
-			"instance_id":   id,
 			"instance_name": name,
 			"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
 		}
@@ -381,12 +381,26 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 			labels["site"] = location
 		}
 
-		if rk := alarm.GetReductionKey(); rk != "" {
-			labels["reduction_key"] = rk
+		// add foreign_source (requisition) if set
+		if fs := alarm.GetNodeCriteria().GetForeignSource(); fs != "" {
+			labels["foreign_source"] = fs
 		}
 
-		if ck := alarm.GetClearKey(); ck != "" {
-			labels["clear_key"] = ck
+		// add human readable details as annotations so they are not part of
+		// the identity of the alert
+		annotations := make(map[string]string)
+		if summary := plainText(alarm.GetLogMessage()); summary != "" {
+			annotations["summary"] = summary
+		}
+		if description := plainText(alarm.GetDescription()); description != "" {
+			annotations["description"] = description
+		}
+		runbook, instructions := operatorInstructions(alarm.GetOperatorInstructions())
+		if runbook != "" {
+			annotations["runbook_url"] = runbook
+		}
+		if instructions != "" {
+			annotations["operator_instructions"] = instructions
 		}
 
 		alert := models.Alert{
@@ -405,9 +419,10 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 
 		// default start and end time based on first event time and now + 5m
 		post := &models.PostableAlert{
-			Alert:    alert,
-			StartsAt: strfmt.DateTime(firstEventTime),
-			EndsAt:   strfmt.DateTime(time.Now().Add(time.Minute * 5)),
+			Alert:       alert,
+			Annotations: annotations,
+			StartsAt:    strfmt.DateTime(firstEventTime),
+			EndsAt:      strfmt.DateTime(time.Now().Add(time.Minute * 5)),
 		}
 
 		// set ends at for cleared alerts based on last update time
@@ -464,7 +479,6 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 		// add heartbeat to list
 		labels := map[string]string{
 			"alertname":     "OpenNMSHeartbeat",
-			"instance_id":   id,
 			"instance_name": name,
 		}
 
@@ -560,6 +574,61 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 	wg.Wait()
 
 	return nil
+}
+
+var htmlTag = regexp.MustCompile(`<[^>]*>`)
+
+// plainText converts the HTML used in OpenNMS alarm fields to plain text on
+// a single line
+func plainText(s string) string {
+	s = htmlTag.ReplaceAllString(s, " ")
+
+	return strings.Join(strings.Fields(html.UnescapeString(s)), " ")
+}
+
+var (
+	htmlLink = regexp.MustCompile(`(?i)<a\s[^>]*href\s*=\s*["']([^"']+)["']`)
+	plainURL = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
+)
+
+// operatorInstructions splits the operator instructions of an alarm into the
+// first http(s) URL they contain, for use as a runbook URL, and their plain
+// text. The text is empty when the instructions were only the URL.
+func operatorInstructions(s string) (runbook, text string) {
+	text = plainText(s)
+
+	// prefer a link in the HTML, as its URL is lost from the plain text
+	for _, m := range htmlLink.FindAllStringSubmatch(s, -1) {
+		if u := strings.TrimSpace(html.UnescapeString(m[1])); plainURL.FindString(u) == u {
+			runbook = u
+			break
+		}
+	}
+
+	if runbook == "" {
+		runbook = trimURL(plainURL.FindString(text))
+	}
+
+	if text == runbook {
+		text = ""
+	}
+
+	return runbook, text
+}
+
+// trimURL removes trailing punctuation that is likely part of the sentence
+// containing a URL rather than the URL itself
+func trimURL(u string) string {
+	for {
+		trimmed := strings.TrimRight(u, ".,;:!?")
+		if strings.HasSuffix(trimmed, ")") && strings.Count(trimmed, "(") < strings.Count(trimmed, ")") {
+			trimmed = strings.TrimSuffix(trimmed, ")")
+		}
+		if trimmed == u {
+			return u
+		}
+		u = trimmed
+	}
 }
 
 func inmap(k string, m map[string]string) string {
