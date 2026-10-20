@@ -186,6 +186,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 			return nil
 		}
 		if err != nil {
+			s.logger.Warn("error receiving alarm update", "error", err)
 			return err
 		}
 
@@ -341,9 +342,16 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 
 		firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
 		lastEventTime := time.UnixMilli(int64(alarm.GetLastEventTime()))
+		lastUpdateTime := time.UnixMilli(int64(alarm.GetLastUpdateTime()))
 
-		if alarm.GetSeverity() != uint32(pb.Severity_CLEARED) && lastEventTime.Before(now.Add(-time.Minute*5)) {
-			// skip cleared alarms older than 5-minutes
+		// skip alarms that were cleared more than 5-minutes ago, these are
+		// included in every snapshot and have already been resolved. Firing
+		// alarms are always sent regardless of age, as snapshots are what keep
+		// long-running alarms active in alertmanager.
+		//
+		// The last update time is used as clearing an alarm does not change
+		// its last event time.
+		if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) && lastUpdateTime.Before(now.Add(-time.Minute*5)) {
 			continue
 		}
 
