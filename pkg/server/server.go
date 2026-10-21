@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -140,7 +141,12 @@ func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...g
 		timer := time.AfterFunc(gracefulStopTimeout, grpcServer.Stop)
 		grpcServer.GracefulStop()
 		timer.Stop()
-		err = <-served
+
+		// if stopped before gRPC started serving, Serve reports that it was
+		// stopped, which is expected here
+		if err = <-served; errors.Is(err, grpc.ErrServerStopped) {
+			err = nil
+		}
 	case err = <-served:
 		grpcServer.Stop()
 	}
