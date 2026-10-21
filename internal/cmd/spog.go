@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
-	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/andrewheberle/simplecommand/koanfcommand"
 	"github.com/bep/simplecobra"
 	"github.com/cloudflare/certinel/fswatcher"
@@ -202,39 +201,14 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	// messages larger than the 4MiB gRPC default
 	c.opts = append(c.opts, grpc.MaxRecvMsgSize(c.maxRecvMsgSize))
 
-	// create register and add server to run group
-	grpcServer := grpc.NewServer(c.opts...)
-	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, c.srv)
-	grpcStopped := make(chan struct{})
+	// receive alarm updates and heartbeats until interrupted, after which
+	// Serve stops gRPC and flushes the alarms it holds before returning
+	serveCtx, stopServe := context.WithCancel(context.Background())
+	defer stopServe()
 	g.Add(func() error {
-		defer close(grpcStopped)
-		c.logger.Info("started gRPC receiver", "address", c.listenAddress)
-
-		return grpcServer.Serve(l)
+		return c.srv.Serve(serveCtx, l, c.opts...)
 	}, func(err error) {
-		go func() {
-			timer := time.AfterFunc(3*time.Second, func() {
-				grpcServer.Stop()
-			})
-			defer timer.Stop()
-			grpcServer.GracefulStop()
-		}()
-	})
-
-	// set up batch message handler
-	handlerCtx, handlerCancel := context.WithCancel(context.Background())
-	defer handlerCancel()
-	g.Add(func() error {
-		c.logger.Info("started gRPC message handler")
-
-		return c.srv.Start(handlerCtx)
-	}, func(err error) {
-		// alarm updates are received until gRPC has stopped, so only then
-		// stop the handler and flush the alarms it holds
-		go func() {
-			<-grpcStopped
-			handlerCancel()
-		}()
+		stopServe()
 	})
 
 	// set up metrics
