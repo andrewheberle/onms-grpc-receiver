@@ -4,13 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -125,62 +121,30 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 }
 
 // WithAlertLabels sets labels that are added to all alerts. An error is
-// returned if any label clashes with a built-in label, has an invalid name
-// or has an empty value.
+// returned by NewServiceSyncServer if any label clashes with a built-in label,
+// has an invalid name or has an empty value.
 func WithAlertLabels(labels map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		if err := validateAlertFields("label", labels, builtinLabels); err != nil {
-			return err
-		}
-		s.alertLabels = labels
+		s.translator.extraLabels = labels
 
 		return nil
 	}
 }
 
 // WithAlertAnnotations sets annotations that are added to all alerts. An
-// error is returned if any annotation clashes with a built-in annotation, has
-// an invalid name or has an empty value.
+// error is returned by NewServiceSyncServer if any annotation clashes with a
+// built-in annotation, has an invalid name or has an empty value.
 func WithAlertAnnotations(annotations map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		if err := validateAlertFields("annotation", annotations, builtinAnnotations); err != nil {
-			return err
-		}
-		s.alertAnnotations = annotations
+		s.translator.extraAnnotations = annotations
 
 		return nil
 	}
 }
 
-var validName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
-
-// validateAlertFields checks labels or annotations to be added to all alerts,
-// returning a single error describing every problem found
-func validateAlertFields(kind string, fields map[string]string, builtin []string) error {
-	var problems []string
-	for _, name := range slices.Sorted(maps.Keys(fields)) {
-		switch {
-		case slices.Contains(builtin, name):
-			problems = append(problems, fmt.Sprintf("%q clashes with a built-in %s", name, kind))
-		case !validName.MatchString(name):
-			problems = append(problems, fmt.Sprintf("%q is not a valid name", name))
-		case strings.HasPrefix(name, "__"):
-			problems = append(problems, fmt.Sprintf("%q is reserved as it starts with \"__\"", name))
-		case fields[name] == "":
-			problems = append(problems, fmt.Sprintf("%q has an empty value", name))
-		}
-	}
-
-	if len(problems) > 0 {
-		return fmt.Errorf("invalid alert %ss: %s", kind, strings.Join(problems, "; "))
-	}
-
-	return nil
-}
-
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.urlMap = m
+		s.translator.urlMap = m
 
 		return nil
 	}
@@ -204,7 +168,7 @@ func WithVerbose() ServiceSyncServerOption {
 
 func WithResolveTimeout(d time.Duration) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.resolveTimeout = d
+		s.translator.resolveTimeout = d
 
 		return nil
 	}

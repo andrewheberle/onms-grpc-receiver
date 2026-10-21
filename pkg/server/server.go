@@ -5,20 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"io"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
-	"net/url"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/go-openapi/strfmt"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -31,16 +25,13 @@ type ServiceSyncServer struct {
 	alertmanagers  func() ([]string, error)
 	logger         *slog.Logger
 	httpClient     *http.Client
-	urlMap         map[string]string
 	dnsClient      *net.Resolver
 	registry       *prometheus.Registry
 	verbose        bool
-	resolveTimeout time.Duration
 	srvCacheTTL    time.Duration
 
-	// labels and annotations added to all alerts
-	alertLabels      map[string]string
-	alertAnnotations map[string]string
+	// turns alarms and heartbeats into alerts
+	translator *alertTranslator
 
 	// metrics
 	alertmanagerTotal  *prometheus.CounterVec
@@ -63,30 +54,6 @@ type ServiceSyncServer struct {
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
 
-var (
-	// builtinLabels are the labels the receiver may set on alerts itself
-	builtinLabels = []string{
-		"alertname",
-		"alarm_id",
-		"node_name",
-		"foreign_source",
-		"instance_name",
-		"severity",
-		"service",
-		"ip_address",
-		"site",
-	}
-
-	// builtinAnnotations are the annotations the receiver may set on alerts
-	// itself
-	builtinAnnotations = []string{
-		"summary",
-		"description",
-		"runbook_url",
-		"operator_instructions",
-	}
-)
-
 type instanceAlarm struct {
 	alarm        *pb.Alarm
 	now          time.Time
@@ -102,6 +69,10 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		if err := o(s); err != nil {
 			return nil, fmt.Errorf("error applying option: %w", err)
 		}
+	}
+
+	if err := s.translator.validate(); err != nil {
+		return nil, err
 	}
 
 	// set up metrics
@@ -179,7 +150,9 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 		registry: prometheus.NewRegistry(),
 
 		// default based on upstream
-		resolveTimeout: time.Minute * 5,
+		translator: &alertTranslator{
+			resolveTimeout: time.Minute * 5,
+		},
 
 		// cache SRV records for 30s by default
 		srvCacheTTL: 30 * time.Second,
@@ -322,7 +295,6 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 		alarm := ia.alarm
 		id := ia.instanceID
 		name := ia.instanceName
-		now := ia.now
 
 		if s.alertmanagers == nil || s.verbose {
 			s.logger.Info("AlarmUpdate",
@@ -366,105 +338,16 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 			}
 		}
 
-		// ignore Normal severity alarms
-		if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
+		alert, err := s.translator.alarm(ia)
+		if err != nil {
+			s.logger.Error("problem creating alert", "error", err)
 			continue
 		}
 
-		firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
-		lastEventTime := time.UnixMilli(int64(alarm.GetLastEventTime()))
-		lastUpdateTime := time.UnixMilli(int64(alarm.GetLastUpdateTime()))
-
-		// skip alarms that were cleared more than 5-minutes ago, these are
-		// included in every snapshot and have already been resolved. Firing
-		// alarms are always sent regardless of age, as snapshots are what keep
-		// long-running alarms active in alertmanager.
-		//
-		// The last update time is used as clearing an alarm does not change
-		// its last event time.
-		if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) && lastUpdateTime.Before(now.Add(-time.Minute*5)) {
-			continue
+		// add to list unless skipped
+		if alert != nil {
+			list = append(list, alert)
 		}
-
-		// add basics
-		labels := map[string]string{
-			"alertname":     alarm.GetUei(),
-			"alarm_id":      fmt.Sprint(alarm.GetId()),
-			"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
-			"instance_name": name,
-			"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
-		}
-
-		// add service if set
-		if service := alarm.GetServiceName(); service != "" {
-			labels["service"] = service
-		}
-
-		// add ip_address if set
-		if ip := alarm.GetIpAddress(); ip != "" {
-			labels["ip_address"] = ip
-		}
-
-		// set site as node location or site if mapping set
-		if location := alarm.GetNodeCriteria().GetLocation(); location != "" {
-			labels["site"] = location
-		}
-
-		// add foreign_source (requisition) if set
-		if fs := alarm.GetNodeCriteria().GetForeignSource(); fs != "" {
-			labels["foreign_source"] = fs
-		}
-
-		// add human readable details as annotations so they are not part of
-		// the identity of the alert
-		annotations := make(map[string]string)
-		if summary := plainText(alarm.GetLogMessage()); summary != "" {
-			annotations["summary"] = summary
-		}
-		if description := plainText(alarm.GetDescription()); description != "" {
-			annotations["description"] = description
-		}
-		runbook, instructions := operatorInstructions(alarm.GetOperatorInstructions())
-		if runbook != "" {
-			annotations["runbook_url"] = runbook
-		}
-		if instructions != "" {
-			annotations["operator_instructions"] = instructions
-		}
-
-		// add configured labels and annotations
-		maps.Copy(labels, s.alertLabels)
-		maps.Copy(annotations, s.alertAnnotations)
-
-		alert := models.Alert{
-			Labels: labels,
-		}
-
-		// add generator URL if mapping set
-		if baseUrl := inmap(id, s.urlMap); baseUrl != "" {
-			u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
-			if err != nil {
-				s.logger.Error("problem creating generatorURL", "error", err)
-				continue
-			}
-			alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
-		}
-
-		// default start and end time based on first event time and now + 5m
-		post := &models.PostableAlert{
-			Alert:       alert,
-			Annotations: annotations,
-			StartsAt:    strfmt.DateTime(firstEventTime),
-			EndsAt:      strfmt.DateTime(time.Now().Add(time.Minute * 5)),
-		}
-
-		// set ends at for cleared alerts based on last update time
-		if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
-			post.EndsAt = strfmt.DateTime(lastEventTime)
-		}
-
-		// add to list
-		list = append(list, post)
 	}
 
 	// send to alertmanager at the end
@@ -509,26 +392,7 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			continue
 		}
 
-		// add heartbeat to list
-		labels := map[string]string{
-			"alertname":     "OpenNMSHeartbeat",
-			"instance_name": name,
-		}
-		maps.Copy(labels, s.alertLabels)
-
-		annotations := make(map[string]string)
-		maps.Copy(annotations, s.alertAnnotations)
-
-		now := time.Now()
-
-		hb := &models.PostableAlert{
-			Alert: models.Alert{
-				Labels: labels,
-			},
-			Annotations: annotations,
-			StartsAt:    strfmt.DateTime(now),
-			EndsAt:      strfmt.DateTime(now.Add(s.resolveTimeout)),
-		}
+		hb := s.translator.heartbeat(name, time.Now())
 		s.logger.Debug("adding message to list", "message", hb)
 
 		// send to alertmanager at the end
@@ -612,67 +476,4 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 	wg.Wait()
 
 	return nil
-}
-
-var htmlTag = regexp.MustCompile(`<[^>]*>`)
-
-// plainText converts the HTML used in OpenNMS alarm fields to plain text on
-// a single line
-func plainText(s string) string {
-	s = htmlTag.ReplaceAllString(s, " ")
-
-	return strings.Join(strings.Fields(html.UnescapeString(s)), " ")
-}
-
-var (
-	htmlLink = regexp.MustCompile(`(?i)<a\s[^>]*href\s*=\s*["']([^"']+)["']`)
-	plainURL = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
-)
-
-// operatorInstructions splits the operator instructions of an alarm into the
-// first http(s) URL they contain, for use as a runbook URL, and their plain
-// text. The text is empty when the instructions were only the URL.
-func operatorInstructions(s string) (runbook, text string) {
-	text = plainText(s)
-
-	// prefer a link in the HTML, as its URL is lost from the plain text
-	for _, m := range htmlLink.FindAllStringSubmatch(s, -1) {
-		if u := strings.TrimSpace(html.UnescapeString(m[1])); plainURL.FindString(u) == u {
-			runbook = u
-			break
-		}
-	}
-
-	if runbook == "" {
-		runbook = trimURL(plainURL.FindString(text))
-	}
-
-	if text == runbook {
-		text = ""
-	}
-
-	return runbook, text
-}
-
-// trimURL removes trailing punctuation that is likely part of the sentence
-// containing a URL rather than the URL itself
-func trimURL(u string) string {
-	for {
-		trimmed := strings.TrimRight(u, ".,;:!?")
-		if strings.HasSuffix(trimmed, ")") && strings.Count(trimmed, "(") < strings.Count(trimmed, ")") {
-			trimmed = strings.TrimSuffix(trimmed, ")")
-		}
-		if trimmed == u {
-			return u
-		}
-		u = trimmed
-	}
-}
-
-func inmap(k string, m map[string]string) string {
-	if v, ok := m[k]; ok {
-		return v
-	}
-
-	return ""
 }
