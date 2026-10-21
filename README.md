@@ -31,7 +31,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.10.0 --alert
 | --metrics.path        | Metrics path                                               | /metrics       |
 | --silent              | Disable all logging                                        |                |
 | --verbose             | Log all messages                                           |                |
-| --resolve.timeout     | Resolve timeout for alarms                                 | 5m             |
+| --resolve.timeout     | Resolve timeout for alarms (must be greater than zero)     | 5m             |
 | --srv.ttl             | TTL for cached SRV lookups                                 | 30s            |
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:

@@ -81,9 +81,14 @@ type runbookData struct {
 
 // newAlertTranslator returns a translator for the given configuration. An
 // error is returned if any extra label or annotation clashes with a built-in
-// one, has an invalid name or has an empty value, or if the runbook URL
-// template is invalid.
+// one, has an invalid name or has an empty value, if the runbook URL template
+// is invalid, or if the resolve timeout is not greater than zero.
 func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTranslator, error) {
+	// a resolve timeout of zero or less would resolve alerts as they are sent
+	if cfg.resolveTimeout <= 0 {
+		return nil, fmt.Errorf("invalid resolve timeout %s: must be greater than zero", cfg.resolveTimeout)
+	}
+
 	if err := validateAlertFields("label", cfg.extraLabels, builtinLabels); err != nil {
 		return nil, err
 	}
