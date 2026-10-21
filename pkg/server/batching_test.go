@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -44,7 +45,9 @@ func (r *recordingFlush) sizes() []int {
 	return sizes
 }
 
-// wait waits for a batch to be flushed, failing the test after timeout
+// wait waits for a batch to be flushed, failing the test after timeout. In a
+// synctest bubble the timeout is in fake time, so it only passes once nothing
+// else in the bubble can run.
 func (r *recordingFlush) wait(t *testing.T, timeout time.Duration) {
 	t.Helper()
 
@@ -89,68 +92,76 @@ func runBatcher(t *testing.T, b *alarmBatcher) (context.CancelFunc, <-chan struc
 }
 
 func TestAlarmBatcherFlushThreshold(t *testing.T) {
-	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 5, time.Hour, slog.New(slog.DiscardHandler))
-	runBatcher(t, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := newRecordingFlush()
+		b := newAlarmBatcher(r.flush, 10, 5, time.Hour, slog.New(slog.DiscardHandler))
+		runBatcher(t, b)
 
-	b.add(update(3))
-	b.add(update(4))
-	r.wait(t, time.Second)
+		b.add(update(3))
+		b.add(update(4))
+		r.wait(t, time.Second)
 
-	// a whole alarm update is added before the threshold is checked
-	if got := r.sizes(); len(got) != 1 || got[0] != 7 {
-		t.Errorf("flushed %v, want one batch of 7", got)
-	}
+		// a whole alarm update is added before the threshold is checked
+		if got := r.sizes(); len(got) != 1 || got[0] != 7 {
+			t.Errorf("flushed %v, want one batch of 7", got)
+		}
+	})
 }
 
 func TestAlarmBatcherFlushThresholdRestartsInterval(t *testing.T) {
-	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 2, time.Millisecond*200, slog.New(slog.DiscardHandler))
-	runBatcher(t, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := newRecordingFlush()
+		b := newAlarmBatcher(r.flush, 10, 2, time.Millisecond*200, slog.New(slog.DiscardHandler))
+		runBatcher(t, b)
 
-	// flush on the threshold just before the interval would have fired
-	time.Sleep(time.Millisecond * 150)
-	b.add(update(2))
-	r.wait(t, time.Second)
+		// flush on the threshold just before the interval would have fired
+		time.Sleep(time.Millisecond * 150)
+		b.add(update(2))
+		r.wait(t, time.Second)
 
-	// a batch added now is only flushed a whole interval after the
-	// threshold flush, not when the original interval ended
-	b.add(update(1))
-	time.Sleep(time.Millisecond * 100)
-	if got := r.sizes(); len(got) != 1 {
-		t.Fatalf("flushed %v, want only the threshold flush before the interval restarts", got)
-	}
+		// a batch added now is only flushed a whole interval after the
+		// threshold flush, not when the original interval ended
+		b.add(update(1))
+		time.Sleep(time.Millisecond * 100)
+		if got := r.sizes(); len(got) != 1 {
+			t.Fatalf("flushed %v, want only the threshold flush before the interval restarts", got)
+		}
 
-	r.wait(t, time.Second)
-	if got := r.sizes(); len(got) != 2 || got[1] != 1 {
-		t.Errorf("flushed %v, want a second batch of 1", got)
-	}
+		r.wait(t, time.Second)
+		if got := r.sizes(); len(got) != 2 || got[1] != 1 {
+			t.Errorf("flushed %v, want a second batch of 1", got)
+		}
+	})
 }
 
 func TestAlarmBatcherFlushInterval(t *testing.T) {
-	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*20, slog.New(slog.DiscardHandler))
-	runBatcher(t, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := newRecordingFlush()
+		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*20, slog.New(slog.DiscardHandler))
+		runBatcher(t, b)
 
-	b.add(update(3))
-	r.wait(t, time.Second)
+		b.add(update(3))
+		r.wait(t, time.Second)
 
-	if got := r.sizes(); len(got) != 1 || got[0] != 3 {
-		t.Errorf("flushed %v, want one batch of 3", got)
-	}
+		if got := r.sizes(); len(got) != 1 || got[0] != 3 {
+			t.Errorf("flushed %v, want one batch of 3", got)
+		}
+	})
 }
 
 func TestAlarmBatcherFlushIntervalEmpty(t *testing.T) {
-	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*10, slog.New(slog.DiscardHandler))
-	runBatcher(t, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := newRecordingFlush()
+		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*10, slog.New(slog.DiscardHandler))
+		runBatcher(t, b)
 
-	// several intervals pass with nothing to flush
-	time.Sleep(time.Millisecond * 50)
+		// several intervals pass with nothing to flush
+		time.Sleep(time.Millisecond * 50)
 
-	if got := r.sizes(); len(got) != 0 {
-		t.Errorf("flushed %v, want nothing", got)
-	}
+		if got := r.sizes(); len(got) != 0 {
+			t.Errorf("flushed %v, want nothing", got)
+		}
+	})
 }
 
 func TestAlarmBatcherQueueFull(t *testing.T) {
@@ -174,40 +185,42 @@ func TestAlarmBatcherQueueFull(t *testing.T) {
 }
 
 func TestAlarmBatcherQueueDepthAfterFlush(t *testing.T) {
-	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler))
-	runBatcher(t, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := newRecordingFlush()
+		b := newAlarmBatcher(r.flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler))
+		runBatcher(t, b)
 
-	b.add(update(1))
-	r.wait(t, time.Second)
+		b.add(update(1))
+		r.wait(t, time.Second)
+		synctest.Wait()
 
-	if got := testutil.ToFloat64(b.queueDepth); got != 0 {
-		t.Errorf("queueDepth = %v, want 0 once the queue is flushed", got)
-	}
+		if got := testutil.ToFloat64(b.queueDepth); got != 0 {
+			t.Errorf("queueDepth = %v, want 0 once the queue is flushed", got)
+		}
+	})
 }
 
 func TestAlarmBatcherShutdownFlushesBatch(t *testing.T) {
-	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler))
-	cancel, done := runBatcher(t, b)
+	synctest.Test(t, func(t *testing.T) {
+		r := newRecordingFlush()
+		b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler))
+		cancel, done := runBatcher(t, b)
 
-	b.add(update(3))
+		b.add(update(3))
 
-	// wait for the update to be taken from the queue into the batch
-	deadline := time.Now().Add(time.Second)
-	for len(b.queue) > 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("update was not taken from the queue")
+		// wait for the update to be taken from the queue into the batch
+		synctest.Wait()
+		if got := len(b.queue); got != 0 {
+			t.Fatalf("queue holds %d updates, want the update taken into the batch", got)
 		}
-		time.Sleep(time.Millisecond)
-	}
 
-	cancel()
-	<-done
+		cancel()
+		<-done
 
-	if got := r.sizes(); len(got) != 1 || got[0] != 3 {
-		t.Errorf("flushed %v, want the batch of 3 flushed on shutdown", got)
-	}
+		if got := r.sizes(); len(got) != 1 || got[0] != 3 {
+			t.Errorf("flushed %v, want the batch of 3 flushed on shutdown", got)
+		}
+	})
 }
 
 func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {

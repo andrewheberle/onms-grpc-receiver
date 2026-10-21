@@ -228,9 +228,6 @@ type srvDiscovery struct {
 	// lookup returns the SRV records for name
 	lookup func(ctx context.Context, name string) ([]*net.SRV, error)
 
-	// now returns the current time
-	now func() time.Time
-
 	mu         sync.Mutex
 	urls       []string
 	expiresAt  time.Time
@@ -253,7 +250,6 @@ func newSRVDiscovery(scheme, name string, ttl time.Duration, logger *slog.Logger
 
 			return addrs, err
 		},
-		now: time.Now,
 	}
 }
 
@@ -263,7 +259,7 @@ func (d *srvDiscovery) alertmanagers() ([]string, error) {
 	}
 
 	d.mu.Lock()
-	now := d.now()
+	now := time.Now()
 	urls := d.urls
 	switch {
 	case now.Before(d.expiresAt):
@@ -309,7 +305,7 @@ func (d *srvDiscovery) refresh() {
 
 // store caches urls, the caller must hold mu
 func (d *srvDiscovery) store(urls []string) {
-	now := d.now()
+	now := time.Now()
 	d.urls = urls
 	d.expiresAt = now.Add(d.ttl)
 	d.staleUntil = now.Add(d.ttl * 2)

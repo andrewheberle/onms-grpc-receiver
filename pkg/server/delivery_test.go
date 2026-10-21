@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/prometheus/alertmanager/api/v2/models"
@@ -231,30 +232,9 @@ func (f *fakeSRV) count() int {
 	return f.lookups
 }
 
-// fakeClock is a settable clock
-type fakeClock struct {
-	mu sync.Mutex
-	t  time.Time
-}
-
-func (c *fakeClock) now() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.t
-}
-
-func (c *fakeClock) advance(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.t = c.t.Add(d)
-}
-
-func newTestSRVDiscovery(ttl time.Duration, lookup *fakeSRV, clock *fakeClock) *srvDiscovery {
+func newTestSRVDiscovery(ttl time.Duration, lookup *fakeSRV) *srvDiscovery {
 	d := newSRVDiscovery("https", "_alertmanager._tcp.example.com", ttl, slog.New(slog.DiscardHandler))
 	d.lookup = lookup.lookup
-	d.now = clock.now
 
 	return d
 }
@@ -272,104 +252,102 @@ func alertmanagers(t *testing.T, d alertmanagerDiscovery) []string {
 }
 
 func TestSRVDiscoveryFresh(t *testing.T) {
-	lookup := &fakeSRV{}
-	clock := &fakeClock{t: time.Now()}
-	d := newTestSRVDiscovery(time.Second*30, lookup, clock)
+	synctest.Test(t, func(t *testing.T) {
+		lookup := &fakeSRV{}
+		d := newTestSRVDiscovery(time.Second*30, lookup)
 
-	want := []string{"https://am.example.com:9091"}
-	if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
-		t.Errorf("first alertmanagers() = %v, want %v", got, want)
-	}
+		want := []string{"https://am.example.com:9091"}
+		if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
+			t.Errorf("first alertmanagers() = %v, want %v", got, want)
+		}
 
-	clock.advance(time.Second * 29)
-	if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
-		t.Errorf("cached alertmanagers() = %v, want %v", got, want)
-	}
-	if got := lookup.count(); got != 1 {
-		t.Errorf("lookups = %d, want 1 as the result is still fresh", got)
-	}
+		time.Sleep(time.Second * 29)
+		if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
+			t.Errorf("cached alertmanagers() = %v, want %v", got, want)
+		}
+		if got := lookup.count(); got != 1 {
+			t.Errorf("lookups = %d, want 1 as the result is still fresh", got)
+		}
+	})
 }
 
 func TestSRVDiscoveryStale(t *testing.T) {
-	lookup := &fakeSRV{}
-	clock := &fakeClock{t: time.Now()}
-	d := newTestSRVDiscovery(time.Second*30, lookup, clock)
+	synctest.Test(t, func(t *testing.T) {
+		lookup := &fakeSRV{}
+		d := newTestSRVDiscovery(time.Second*30, lookup)
 
-	alertmanagers(t, d)
+		alertmanagers(t, d)
 
-	// hold the background lookup until released
-	lookup.release = make(chan struct{})
-	clock.advance(time.Second * 45)
+		// hold the background lookup until released
+		lookup.release = make(chan struct{})
+		time.Sleep(time.Second * 45)
 
-	stale := []string{"https://am.example.com:9091"}
-	for range 3 {
-		if got := alertmanagers(t, d); !reflect.DeepEqual(got, stale) {
-			t.Errorf("stale alertmanagers() = %v, want %v", got, stale)
+		stale := []string{"https://am.example.com:9091"}
+		for range 3 {
+			if got := alertmanagers(t, d); !reflect.DeepEqual(got, stale) {
+				t.Errorf("stale alertmanagers() = %v, want %v", got, stale)
+			}
 		}
-	}
 
-	// only one background lookup is started, the rest waits on release
-	close(lookup.release)
+		// only one background lookup is started, the rest waits on release
+		close(lookup.release)
+		synctest.Wait()
 
-	want := []string{"https://am.example.com:9092"}
-	deadline := time.Now().Add(time.Second * 5)
-	for got := alertmanagers(t, d); !reflect.DeepEqual(got, want); got = alertmanagers(t, d) {
-		if time.Now().After(deadline) {
-			t.Fatalf("alertmanagers() = %v, want refreshed %v", got, want)
+		want := []string{"https://am.example.com:9092"}
+		if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
+			t.Errorf("alertmanagers() = %v, want refreshed %v", got, want)
 		}
-		time.Sleep(time.Millisecond)
-	}
-	if got := lookup.count(); got != 2 {
-		t.Errorf("lookups = %d, want 2 as only one background lookup runs", got)
-	}
+		if got := lookup.count(); got != 2 {
+			t.Errorf("lookups = %d, want 2 as only one background lookup runs", got)
+		}
+	})
 }
 
 func TestSRVDiscoveryStaleRefreshFails(t *testing.T) {
-	lookup := &fakeSRV{}
-	clock := &fakeClock{t: time.Now()}
-	d := newTestSRVDiscovery(time.Second*30, lookup, clock)
+	synctest.Test(t, func(t *testing.T) {
+		lookup := &fakeSRV{}
+		d := newTestSRVDiscovery(time.Second*30, lookup)
 
-	alertmanagers(t, d)
-
-	lookup.mu.Lock()
-	lookup.err = errors.New("lookup failed")
-	lookup.mu.Unlock()
-	clock.advance(time.Second * 45)
-
-	stale := []string{"https://am.example.com:9091"}
-	if got := alertmanagers(t, d); !reflect.DeepEqual(got, stale) {
-		t.Errorf("stale alertmanagers() = %v, want %v", got, stale)
-	}
-
-	// a failed background lookup allows another to be started
-	deadline := time.Now().Add(time.Second * 5)
-	for lookup.count() < 3 {
-		if time.Now().After(deadline) {
-			t.Fatalf("lookups = %d, want another background lookup after a failure", lookup.count())
-		}
 		alertmanagers(t, d)
-		time.Sleep(time.Millisecond)
-	}
+
+		lookup.mu.Lock()
+		lookup.err = errors.New("lookup failed")
+		lookup.mu.Unlock()
+		time.Sleep(time.Second * 45)
+
+		stale := []string{"https://am.example.com:9091"}
+		if got := alertmanagers(t, d); !reflect.DeepEqual(got, stale) {
+			t.Errorf("stale alertmanagers() = %v, want %v", got, stale)
+		}
+		synctest.Wait()
+
+		// a failed background lookup allows another to be started
+		alertmanagers(t, d)
+		synctest.Wait()
+		if got := lookup.count(); got != 3 {
+			t.Errorf("lookups = %d, want another background lookup after a failure", got)
+		}
+	})
 }
 
 func TestSRVDiscoveryExpired(t *testing.T) {
-	lookup := &fakeSRV{}
-	clock := &fakeClock{t: time.Now()}
-	d := newTestSRVDiscovery(time.Second*30, lookup, clock)
+	synctest.Test(t, func(t *testing.T) {
+		lookup := &fakeSRV{}
+		d := newTestSRVDiscovery(time.Second*30, lookup)
 
-	alertmanagers(t, d)
-	clock.advance(time.Second * 61)
+		alertmanagers(t, d)
+		time.Sleep(time.Second * 61)
 
-	want := []string{"https://am.example.com:9092"}
-	if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
-		t.Errorf("expired alertmanagers() = %v, want %v looked up straight away", got, want)
-	}
+		want := []string{"https://am.example.com:9092"}
+		if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
+			t.Errorf("expired alertmanagers() = %v, want %v looked up straight away", got, want)
+		}
+	})
 }
 
 func TestSRVDiscoveryExpiredLookupError(t *testing.T) {
 	lookup := &fakeSRV{err: errors.New("lookup failed")}
-	clock := &fakeClock{t: time.Now()}
-	d := newTestSRVDiscovery(time.Second*30, lookup, clock)
+	d := newTestSRVDiscovery(time.Second*30, lookup)
 
 	if _, err := d.alertmanagers(); err == nil {
 		t.Error("alertmanagers() error = nil, want lookup error")
@@ -378,8 +356,7 @@ func TestSRVDiscoveryExpiredLookupError(t *testing.T) {
 
 func TestSRVDiscoveryNoCache(t *testing.T) {
 	lookup := &fakeSRV{}
-	clock := &fakeClock{t: time.Now()}
-	d := newTestSRVDiscovery(0, lookup, clock)
+	d := newTestSRVDiscovery(0, lookup)
 
 	alertmanagers(t, d)
 	want := []string{"https://am.example.com:9092"}
