@@ -11,10 +11,14 @@ import (
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 )
 
-// newTestTranslator returns a translator for cfg, failing the test if it is
-// invalid
+// newTestTranslator returns a translator for cfg, with a resolve timeout of 5
+// minutes if not set, failing the test if it is invalid
 func newTestTranslator(t *testing.T, cfg translationConfig) *alertTranslator {
 	t.Helper()
+
+	if cfg.resolveTimeout == 0 {
+		cfg.resolveTimeout = time.Minute * 5
+	}
 
 	tr, err := newAlertTranslator(cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -384,7 +388,7 @@ func TestNewAlertTranslatorRunbookURLTemplate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newAlertTranslator(translationConfig{runbookURLTemplate: tt.template}, slog.New(slog.DiscardHandler))
+			_, err := newAlertTranslator(translationConfig{runbookURLTemplate: tt.template, resolveTimeout: time.Minute}, slog.New(slog.DiscardHandler))
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("newAlertTranslator() error = %v, want nil", err)
@@ -539,6 +543,32 @@ func TestBuiltinNames(t *testing.T) {
 	}
 }
 
+func TestNewAlertTranslatorResolveTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		wantErr string
+	}{
+		{"positive", time.Minute * 5, ""},
+		{"zero", 0, "invalid resolve timeout 0s: must be greater than zero"},
+		{"negative", -time.Minute, "invalid resolve timeout -1m0s: must be greater than zero"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newAlertTranslator(translationConfig{resolveTimeout: tt.timeout}, slog.New(slog.DiscardHandler))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("newAlertTranslator() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("newAlertTranslator() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestNewAlertTranslatorLabels(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -558,7 +588,7 @@ func TestNewAlertTranslatorLabels(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newAlertTranslator(translationConfig{extraLabels: tt.labels}, slog.New(slog.DiscardHandler))
+			_, err := newAlertTranslator(translationConfig{extraLabels: tt.labels, resolveTimeout: time.Minute}, slog.New(slog.DiscardHandler))
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("newAlertTranslator() error = %v, want nil", err)
@@ -589,7 +619,7 @@ func TestNewAlertTranslatorAnnotations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newAlertTranslator(translationConfig{extraAnnotations: tt.annotations}, slog.New(slog.DiscardHandler))
+			_, err := newAlertTranslator(translationConfig{extraAnnotations: tt.annotations, resolveTimeout: time.Minute}, slog.New(slog.DiscardHandler))
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("newAlertTranslator() error = %v, want nil", err)
