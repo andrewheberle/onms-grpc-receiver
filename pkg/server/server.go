@@ -66,6 +66,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		}
 	}
 
+	s.translator.logger = s.logger
 	if err := s.translator.validate(); err != nil {
 		return nil, err
 	}

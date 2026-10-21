@@ -85,6 +85,17 @@ func WithAlertAnnotations(annotations map[string]string) ServiceSyncServerOption
 	}
 }
 
+// WithRunbookURLTemplate sets a Go text/template used for the runbook_url
+// annotation of alerts when an alarm's operator instructions contain no URL.
+// An error is returned by NewServiceSyncServer if the template is invalid.
+func WithRunbookURLTemplate(tmpl string) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.translator.runbookURLTemplate = tmpl
+
+		return nil
+	}
+}
+
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.translator.urlMap = m

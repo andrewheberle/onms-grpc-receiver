@@ -28,6 +28,10 @@ _Avoid_: Resolved alarm, closed alarm
 The later of an Alarm's last event time and its last automation time; for a Cleared Alarm, the best available record of when it was cleared.
 _Avoid_: Clear time, modified time
 
+**Operator instructions**:
+Free-text guidance OpenNMS attaches to an Alarm from its event definition, which may contain a runbook URL.
+_Avoid_: Operinstruct, instructions, notes
+
 **Heartbeat**:
 A periodic liveness message from a Horizon instance.
 _Avoid_: Ping, keepalive
@@ -57,3 +61,7 @@ _Avoid_: Forwarding, dispatch, notification
 **Alert translation**:
 The rules that turn an Alarm or Heartbeat from a Horizon instance into an Alert, or decide it is not sent.
 _Avoid_: Conversion, mapping, alert builder
+
+**Runbook URL template**:
+An operator-configured pattern that builds an Alert's runbook URL from its labels, used when the Alarm's Operator instructions contain no URL.
+_Avoid_: Runbook default, runbook fallback, runbook pattern
