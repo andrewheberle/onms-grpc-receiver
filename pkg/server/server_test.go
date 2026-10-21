@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +14,10 @@ import (
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/prometheus/alertmanager/api/v2/models"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -78,9 +83,10 @@ func TestAlarmUpdate(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
-		done <- s.Start(ctx)
+		defer close(done)
+		s.pipeline.run(ctx)
 	}()
 
 	stream := &alarmStream{updates: []*pb.AlarmUpdateList{pb.AlarmUpdateList_builder{
@@ -94,9 +100,7 @@ func TestAlarmUpdate(t *testing.T) {
 
 	// stopping flushes the queued alarms
 	cancel()
-	if err := <-done; err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
+	<-done
 
 	if len(got) != 1 {
 		t.Fatalf("AlarmUpdate() sent %d alerts, want 1", len(got))
@@ -153,5 +157,115 @@ func TestNewServiceSyncServerRejectsBuiltinNames(t *testing.T) {
 				t.Errorf("NewServiceSyncServer() error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// serve runs s.Serve on an in-memory listener until the test ends, returning
+// a client connection to it and a channel that receives the result of Serve
+func serve(t *testing.T, s *ServiceSyncServer, ctx context.Context) (*grpc.ClientConn, <-chan error) {
+	t.Helper()
+
+	lis := bufconn.Listen(1024 * 1024)
+	t.Cleanup(func() { _ = lis.Close() })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Serve(ctx, lis)
+	}()
+
+	conn, err := grpc.NewClient("passthrough:///bufconn",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return conn, done
+}
+
+// waitServed waits for Serve to return, failing the test if it does not
+func waitServed(t *testing.T, done <-chan error) {
+	t.Helper()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Serve() error = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve() did not return after being cancelled")
+	}
+}
+
+func TestServeStopsWhenCancelled(t *testing.T) {
+	s, err := NewServiceSyncServer()
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	_, done := serve(t, s, ctx)
+
+	cancel()
+	waitServed(t, done)
+}
+
+// TestServeFlushesAlarmsReceivedWhileStopping checks that an alarm update
+// received on an open stream after Serve is cancelled still reaches
+// Alertmanager, as gRPC is stopped before the alarms are flushed
+func TestServeFlushesAlarmsReceivedWhileStopping(t *testing.T) {
+	var got []models.PostableAlert
+	s, err := NewServiceSyncServer(
+		WithAlertmanagerUrl([]string{fakeAlertmanager(t, &got)}),
+	)
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	conn, done := serve(t, s, ctx)
+
+	stream, err := pb.NewNmsInventoryServiceSyncClient(conn).AlarmUpdate(context.Background())
+	if err != nil {
+		t.Fatalf("AlarmUpdate() error = %v", err)
+	}
+
+	// make sure the stream is open before cancelling, as no new streams are
+	// accepted once stopping has started
+	if err := stream.Send(pb.AlarmUpdateList_builder{InstanceId: "test", InstanceName: "OpenNMS"}.Build()); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for testutil.ToFloat64(s.pipeline.alarmTotal.WithLabelValues("test")) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("first alarm update was not received")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+
+	if err := stream.Send(pb.AlarmUpdateList_builder{
+		InstanceId:   "test",
+		InstanceName: "OpenNMS",
+		Alarms:       []*pb.Alarm{fullAlarm(time.Now())},
+	}.Build()); err != nil {
+		t.Fatalf("Send() after cancel error = %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("CloseSend() error = %v", err)
+	}
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("Recv() error = %v, want io.EOF", err)
+	}
+
+	waitServed(t, done)
+
+	if len(got) != 1 || got[0].Labels["alarm_id"] != "25" {
+		t.Errorf("alertmanager got %v, want the alarm sent after cancelling", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -102,11 +103,53 @@ func (s *ServiceSyncServer) MetricsHandler() http.Handler {
 	})
 }
 
-// Start handles received alarms until ctx is cancelled
-func (s *ServiceSyncServer) Start(ctx context.Context) error {
-	s.pipeline.run(ctx)
+// gracefulStopTimeout is how long gRPC streams are given to finish when
+// stopping before they are closed
+const gracefulStopTimeout = 3 * time.Second
 
-	return nil
+// Serve receives alarm updates and heartbeats on l until ctx is cancelled or
+// serving fails, using opts for the gRPC server.
+//
+// When ctx is cancelled no new streams are accepted, while open streams are
+// given up to gracefulStopTimeout to finish. As alarm updates are received
+// until then, the alarms held by the alert pipeline are only flushed once
+// gRPC has stopped, and Serve returns once they have been sent.
+func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...grpc.ServerOption) error {
+	grpcServer := grpc.NewServer(opts...)
+	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, s)
+
+	// the pipeline is not stopped by ctx, as it must keep running until gRPC
+	// has stopped
+	pipelineCtx, stopPipeline := context.WithCancel(context.Background())
+	pipelineDone := make(chan struct{})
+	go func() {
+		defer close(pipelineDone)
+		s.pipeline.run(pipelineCtx)
+	}()
+
+	served := make(chan error, 1)
+	go func() {
+		s.logger.Info("started gRPC receiver", "address", l.Addr().String())
+		served <- grpcServer.Serve(l)
+	}()
+
+	var err error
+	select {
+	case <-ctx.Done():
+		s.logger.Info("stopping gRPC receiver")
+		timer := time.AfterFunc(gracefulStopTimeout, grpcServer.Stop)
+		grpcServer.GracefulStop()
+		timer.Stop()
+		err = <-served
+	case err = <-served:
+		grpcServer.Stop()
+	}
+
+	// every alarm update has now been received, so flush the alarms held
+	stopPipeline()
+	<-pipelineDone
+
+	return err
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
