@@ -54,6 +54,10 @@ _Avoid_: Custom label, static label, global label
 A Prometheus Alertmanager that receives Alerts; there may be several, listed directly or found from a DNS SRV record, and each one is sent every Alert.
 _Avoid_: AM, receiver, target
 
+**Alert pipeline**:
+Everything that happens to an Alarm update or Heartbeat after it is received, through Alert translation to Alert delivery.
+_Avoid_: Handler, processor, worker
+
 **Alert delivery**:
 Sending Alerts to every Alertmanager currently known.
 _Avoid_: Forwarding, dispatch, notification
