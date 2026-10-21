@@ -180,12 +180,13 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 		alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
 	}
 
-	// default start and end time based on first event time and now + 5m
+	// default start and end time based on first event time and when the
+	// alarm was received plus the resolve timeout
 	post := &models.PostableAlert{
 		Alert:       alert,
 		Annotations: annotations,
 		StartsAt:    strfmt.DateTime(firstEventTime),
-		EndsAt:      strfmt.DateTime(time.Now().Add(time.Minute * 5)),
+		EndsAt:      strfmt.DateTime(ia.now.Add(t.resolveTimeout)),
 	}
 
 	// set ends at for cleared alerts based on last update time

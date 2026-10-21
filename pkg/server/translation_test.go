@@ -78,7 +78,10 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 		return uint64(now.Add(d).UnixMilli())
 	}
 
-	tr := &alertTranslator{}
+	// received a while before being translated, as happens when batched
+	now = now.Add(-time.Second * 20)
+
+	tr := &alertTranslator{resolveTimeout: time.Minute * 3}
 
 	firing, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             1,
@@ -90,8 +93,8 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alarm() error = %v", err)
 	}
-	if endsAt := time.Time(firing.EndsAt); !endsAt.After(now) {
-		t.Errorf("firing alert EndsAt = %v, want after %v", endsAt, now)
+	if endsAt, want := time.Time(firing.EndsAt), now.Add(time.Minute*3); !endsAt.Equal(want) {
+		t.Errorf("firing alert EndsAt = %v, want %v", endsAt, want)
 	}
 
 	cleared, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
