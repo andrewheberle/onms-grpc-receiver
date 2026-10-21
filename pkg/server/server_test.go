@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/prometheus/alertmanager/api/v2/models"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -77,6 +78,78 @@ func (h *heartbeatStream) Recv() (*pb.HeartBeat, error) {
 	h.heartbeats = h.heartbeats[1:]
 
 	return hb, nil
+}
+
+// alarmStream is a minimal AlarmUpdate stream that returns the given updates
+// then io.EOF
+type alarmStream struct {
+	grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]
+	updates []*pb.AlarmUpdateList
+}
+
+func (a *alarmStream) Recv() (*pb.AlarmUpdateList, error) {
+	if len(a.updates) == 0 {
+		return nil, io.EOF
+	}
+	u := a.updates[0]
+	a.updates = a.updates[1:]
+
+	return u, nil
+}
+
+// TestAlarmUpdateLastSnapshot checks the last snapshot time is only recorded
+// for full snapshots, per instance
+func TestAlarmUpdateLastSnapshot(t *testing.T) {
+	update := func(id string, snapshot bool, alarms int) *pb.AlarmUpdateList {
+		list := make([]*pb.Alarm, alarms)
+		for i := range list {
+			list[i] = pb.Alarm_builder{Id: uint64(i + 1)}.Build()
+		}
+		return pb.AlarmUpdateList_builder{
+			InstanceId: id,
+			Snapshot:   snapshot,
+			Alarms:     list,
+		}.Build()
+	}
+
+	tests := []struct {
+		name    string
+		updates []*pb.AlarmUpdateList
+		want    []string
+	}{
+		{"snapshot", []*pb.AlarmUpdateList{update("a", true, 2)}, []string{"a"}},
+		{"not a snapshot", []*pb.AlarmUpdateList{update("a", false, 2)}, nil},
+		{"empty snapshot", []*pb.AlarmUpdateList{update("a", true, 0)}, []string{"a"}},
+		{"two instances", []*pb.AlarmUpdateList{
+			update("a", true, 1),
+			update("b", false, 1),
+			update("c", true, 1),
+		}, []string{"a", "c"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := NewServiceSyncServer()
+			if err != nil {
+				t.Fatalf("NewServiceSyncServer() error = %v", err)
+			}
+
+			start := time.Now().Unix()
+			if err := s.AlarmUpdate(&alarmStream{updates: tt.updates}); err != nil {
+				t.Fatalf("AlarmUpdate() error = %v", err)
+			}
+			end := time.Now().Unix() + 1
+
+			if got := testutil.CollectAndCount(s.alarmLastSnapshot); got != len(tt.want) {
+				t.Fatalf("last snapshot series = %d, want %d", got, len(tt.want))
+			}
+			for _, id := range tt.want {
+				got := testutil.ToFloat64(s.alarmLastSnapshot.WithLabelValues(id))
+				if got < float64(start) || got > float64(end) {
+					t.Errorf("last snapshot for %q = %v, want between %d and %d", id, got, start, end)
+				}
+			}
+		})
+	}
 }
 
 // TestHeartBeatUpdate checks translated heartbeats are sent to alertmanager,
