@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"reflect"
 	"slices"
 	"strings"
@@ -9,6 +10,19 @@ import (
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 )
+
+// newTestTranslator returns a translator for cfg, failing the test if it is
+// invalid
+func newTestTranslator(t *testing.T, cfg translationConfig) *alertTranslator {
+	t.Helper()
+
+	tr, err := newAlertTranslator(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("newAlertTranslator() error = %v", err)
+	}
+
+	return tr
+}
 
 func TestAlertTranslatorAlarmSkips(t *testing.T) {
 	now := time.Now()
@@ -59,7 +73,7 @@ func TestAlertTranslatorAlarmSkips(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := &alertTranslator{}
+			tr := newTestTranslator(t, translationConfig{})
 
 			got, err := tr.alarm(instanceAlarm{alarm: tt.alarm, now: now, instanceID: "test"})
 			if err != nil {
@@ -82,7 +96,7 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	// received a while before being translated, as happens when batched
 	now = now.Add(-time.Second * 20)
 
-	tr := &alertTranslator{resolveTimeout: time.Minute * 3}
+	tr := newTestTranslator(t, translationConfig{resolveTimeout: time.Minute * 3})
 
 	firing, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             1,
@@ -116,7 +130,7 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 func TestAlertTranslatorAlarmLabelsAndAnnotations(t *testing.T) {
 	now := time.Now()
 
-	tr := &alertTranslator{}
+	tr := newTestTranslator(t, translationConfig{})
 
 	got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 		Id:  25,
@@ -171,7 +185,7 @@ func TestAlertTranslatorAlarmLabelsAndAnnotations(t *testing.T) {
 func TestAlertTranslatorAlarmOmitsEmptyAnnotations(t *testing.T) {
 	now := time.Now()
 
-	tr := &alertTranslator{}
+	tr := newTestTranslator(t, translationConfig{})
 
 	got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             1,
@@ -206,9 +220,9 @@ func TestAlertTranslatorAlarmGeneratorURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := &alertTranslator{
+			tr := newTestTranslator(t, translationConfig{
 				urlMap: map[string]string{"6f8a7c1e-uuid": "https://horizon.example.com/opennms"},
-			}
+			})
 
 			got, err := tr.alarm(instanceAlarm{alarm: fullAlarm(now), now: now, instanceID: tt.instanceID})
 			if err != nil {
@@ -275,7 +289,7 @@ func TestAlertTranslatorAlarmRunbookURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := &alertTranslator{}
+			tr := newTestTranslator(t, translationConfig{})
 
 			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 				Id:                   1,
@@ -319,13 +333,10 @@ func TestAlertTranslatorRunbookURLTemplate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := &alertTranslator{
+			tr := newTestTranslator(t, translationConfig{
 				extraLabels:        map[string]string{"env": "prod"},
 				runbookURLTemplate: tt.template,
-			}
-			if err := tr.validate(); err != nil {
-				t.Fatalf("validate() error = %v", err)
-			}
+			})
 
 			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 				Id:  1,
@@ -350,10 +361,7 @@ func TestAlertTranslatorRunbookURLTemplate(t *testing.T) {
 }
 
 func TestAlertTranslatorHeartbeatRunbookURLTemplate(t *testing.T) {
-	tr := &alertTranslator{runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.alertname }}"}
-	if err := tr.validate(); err != nil {
-		t.Fatalf("validate() error = %v", err)
-	}
+	tr := newTestTranslator(t, translationConfig{runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.alertname }}"})
 
 	got := tr.heartbeat("OpenNMS", time.Now())
 
@@ -362,7 +370,7 @@ func TestAlertTranslatorHeartbeatRunbookURLTemplate(t *testing.T) {
 	}
 }
 
-func TestAlertTranslatorValidateRunbookURLTemplate(t *testing.T) {
+func TestNewAlertTranslatorRunbookURLTemplate(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
@@ -376,15 +384,15 @@ func TestAlertTranslatorValidateRunbookURLTemplate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := (&alertTranslator{runbookURLTemplate: tt.template}).validate()
+			_, err := newAlertTranslator(translationConfig{runbookURLTemplate: tt.template}, slog.New(slog.DiscardHandler))
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Errorf("validate() error = %v, want nil", err)
+					t.Errorf("newAlertTranslator() error = %v, want nil", err)
 				}
 				return
 			}
 			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
-				t.Errorf("validate() error = %v, want prefix %q", err, tt.wantErr)
+				t.Errorf("newAlertTranslator() error = %v, want prefix %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -417,10 +425,10 @@ func fullAlarm(now time.Time) *pb.Alarm {
 func TestAlertTranslatorAlarmExtraLabelsAndAnnotations(t *testing.T) {
 	now := time.Now()
 
-	tr := &alertTranslator{
+	tr := newTestTranslator(t, translationConfig{
 		extraLabels:      map[string]string{"env": "prod", "team": "noc"},
 		extraAnnotations: map[string]string{"dashboard": "https://grafana/d/onms"},
-	}
+	})
 
 	got, err := tr.alarm(instanceAlarm{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"})
 	if err != nil {
@@ -477,11 +485,11 @@ func TestAlertTranslatorAlarmExtraLabelsAndAnnotations(t *testing.T) {
 func TestAlertTranslatorHeartbeat(t *testing.T) {
 	now := time.Now()
 
-	tr := &alertTranslator{
+	tr := newTestTranslator(t, translationConfig{
 		extraLabels:      map[string]string{"env": "prod"},
 		extraAnnotations: map[string]string{"dashboard": "https://grafana/d/onms"},
 		resolveTimeout:   time.Minute * 3,
-	}
+	})
 
 	got := tr.heartbeat("OpenNMS", now)
 
@@ -510,7 +518,7 @@ func TestAlertTranslatorHeartbeat(t *testing.T) {
 func TestBuiltinNames(t *testing.T) {
 	now := time.Now()
 
-	tr := &alertTranslator{}
+	tr := newTestTranslator(t, translationConfig{})
 
 	alarm, err := tr.alarm(instanceAlarm{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"})
 	if err != nil {
@@ -531,7 +539,7 @@ func TestBuiltinNames(t *testing.T) {
 	}
 }
 
-func TestAlertTranslatorValidateLabels(t *testing.T) {
+func TestNewAlertTranslatorLabels(t *testing.T) {
 	tests := []struct {
 		name    string
 		labels  map[string]string
@@ -550,21 +558,21 @@ func TestAlertTranslatorValidateLabels(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := (&alertTranslator{extraLabels: tt.labels}).validate()
+			_, err := newAlertTranslator(translationConfig{extraLabels: tt.labels}, slog.New(slog.DiscardHandler))
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Errorf("validate() error = %v, want nil", err)
+					t.Errorf("newAlertTranslator() error = %v, want nil", err)
 				}
 				return
 			}
 			if err == nil || err.Error() != tt.wantErr {
-				t.Errorf("validate() error = %v, want %q", err, tt.wantErr)
+				t.Errorf("newAlertTranslator() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestAlertTranslatorValidateAnnotations(t *testing.T) {
+func TestNewAlertTranslatorAnnotations(t *testing.T) {
 	tests := []struct {
 		name        string
 		annotations map[string]string
@@ -581,15 +589,15 @@ func TestAlertTranslatorValidateAnnotations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := (&alertTranslator{extraAnnotations: tt.annotations}).validate()
+			_, err := newAlertTranslator(translationConfig{extraAnnotations: tt.annotations}, slog.New(slog.DiscardHandler))
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Errorf("validate() error = %v, want nil", err)
+					t.Errorf("newAlertTranslator() error = %v, want nil", err)
 				}
 				return
 			}
 			if err == nil || err.Error() != tt.wantErr {
-				t.Errorf("validate() error = %v, want %q", err, tt.wantErr)
+				t.Errorf("newAlertTranslator() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}

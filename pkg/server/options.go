@@ -68,7 +68,7 @@ func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 // has an invalid name or has an empty value.
 func WithAlertLabels(labels map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.translator.extraLabels = labels
+		s.translationConfig.extraLabels = labels
 
 		return nil
 	}
@@ -79,7 +79,7 @@ func WithAlertLabels(labels map[string]string) ServiceSyncServerOption {
 // built-in annotation, has an invalid name or has an empty value.
 func WithAlertAnnotations(annotations map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.translator.extraAnnotations = annotations
+		s.translationConfig.extraAnnotations = annotations
 
 		return nil
 	}
@@ -90,7 +90,7 @@ func WithAlertAnnotations(annotations map[string]string) ServiceSyncServerOption
 // An error is returned by NewServiceSyncServer if the template is invalid.
 func WithRunbookURLTemplate(tmpl string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.translator.runbookURLTemplate = tmpl
+		s.translationConfig.runbookURLTemplate = tmpl
 
 		return nil
 	}
@@ -98,7 +98,7 @@ func WithRunbookURLTemplate(tmpl string) ServiceSyncServerOption {
 
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.translator.urlMap = m
+		s.translationConfig.urlMap = m
 
 		return nil
 	}
@@ -122,7 +122,7 @@ func WithVerbose() ServiceSyncServerOption {
 
 func WithResolveTimeout(d time.Duration) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.translator.resolveTimeout = d
+		s.translationConfig.resolveTimeout = d
 
 		return nil
 	}
