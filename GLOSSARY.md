@@ -42,6 +42,14 @@ _Avoid_: Default label, standard label
 A label or annotation configured by the operator and added to every Alert; it may not reuse a Built-in name.
 _Avoid_: Custom label, static label, global label
 
+**Alertmanager**:
+A Prometheus Alertmanager that receives Alerts; there may be several, listed directly or found from a DNS SRV record, and each one is sent every Alert.
+_Avoid_: AM, receiver, target
+
+**Alert delivery**:
+Sending Alerts to every Alertmanager currently known.
+_Avoid_: Forwarding, dispatch, notification
+
 **Alert translation**:
 The rules that turn an Alarm or Heartbeat from a Horizon instance into an Alert, or decide it is not sent.
 _Avoid_: Conversion, mapping, alert builder
