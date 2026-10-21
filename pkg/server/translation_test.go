@@ -107,8 +107,8 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alarm() error = %v", err)
 	}
-	if endsAt := time.Time(cleared.EndsAt); endsAt.After(time.Now()) {
-		t.Errorf("cleared alert EndsAt = %v, want in the past", endsAt)
+	if endsAt, want := time.Time(cleared.EndsAt), time.UnixMilli(int64(ms(-time.Second))); !endsAt.Equal(want) {
+		t.Errorf("cleared alert EndsAt = %v, want last update time %v", endsAt, want)
 	}
 }
 

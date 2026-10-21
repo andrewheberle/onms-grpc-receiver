@@ -104,15 +104,16 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 	}
 
 	firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
-	lastEventTime := time.UnixMilli(int64(alarm.GetLastEventTime()))
+
+	// The last update time is the later of the last event time and the last
+	// automation time. It is used as when an alarm was cleared, as a clear
+	// event reduced into the alarm changes its last event time, but a clear
+	// by automation (eg. a Drools rule) only changes its last automation time.
 	lastUpdateTime := time.UnixMilli(int64(alarm.GetLastUpdateTime()))
 
 	// skip alarms that were cleared too long ago. Firing alarms are always
 	// sent regardless of age, as snapshots are what keep long-running alarms
 	// active in alertmanager.
-	//
-	// The last update time is used as clearing an alarm does not change
-	// its last event time.
 	if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) && lastUpdateTime.Before(ia.now.Add(-clearedAlarmWindow)) {
 		return nil, nil
 	}
@@ -189,9 +190,9 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 		EndsAt:      strfmt.DateTime(ia.now.Add(t.resolveTimeout)),
 	}
 
-	// set ends at for cleared alerts based on last update time
+	// end cleared alerts when the alarm was cleared
 	if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
-		post.EndsAt = strfmt.DateTime(lastEventTime)
+		post.EndsAt = strfmt.DateTime(lastUpdateTime)
 	}
 
 	return post, nil
