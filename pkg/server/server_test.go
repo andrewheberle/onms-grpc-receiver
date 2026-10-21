@@ -8,13 +8,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/prometheus/alertmanager/api/v2/models"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -235,8 +236,10 @@ func TestServeCancelledBeforeServing(t *testing.T) {
 // Alertmanager, as gRPC is stopped before the alarms are flushed
 func TestServeFlushesAlarmsReceivedWhileStopping(t *testing.T) {
 	var got []models.PostableAlert
+	reg := prometheus.NewRegistry()
 	s, err := NewServiceSyncServer(
 		WithAlertmanagerUrl([]string{fakeAlertmanager(t, &got)}),
+		WithRegistry(reg),
 	)
 	if err != nil {
 		t.Fatalf("NewServiceSyncServer() error = %v", err)
@@ -256,7 +259,7 @@ func TestServeFlushesAlarmsReceivedWhileStopping(t *testing.T) {
 		t.Fatalf("Send() error = %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for testutil.ToFloat64(s.pipeline.alarmTotal.WithLabelValues("test")) == 0 {
+	for metricValue(t, reg, "onmsgrpc_alarm_total", "instance_id", "test") == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("first alarm update was not received")
 		}
@@ -283,5 +286,56 @@ func TestServeFlushesAlarmsReceivedWhileStopping(t *testing.T) {
 
 	if len(got) != 1 || got[0].Labels["alarm_id"] != "25" {
 		t.Errorf("alertmanager got %v, want the alarm sent after cancelling", got)
+	}
+}
+
+// TestServiceSyncServerMetrics checks the name and help of every metric the
+// receiver exposes, as they are relied on by dashboards and alerts
+func TestServiceSyncServerMetrics(t *testing.T) {
+	am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(am.Close)
+
+	reg := prometheus.NewRegistry()
+	s, err := NewServiceSyncServer(
+		WithAlertmanagerUrl([]string{am.URL}),
+		WithRegistry(reg),
+	)
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	// metrics with labels only have series once they are used
+	now := time.Now()
+	s.pipeline.heartbeat(pb.HeartBeat_builder{
+		MonitoringInstance: pb.MonitoringInstance_builder{InstanceId: "test", InstanceName: "OpenNMS"}.Build(),
+	}.Build(), now)
+	s.pipeline.alarmUpdate(pb.AlarmUpdateList_builder{InstanceId: "test", Snapshot: true}.Build(), now)
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	got := make(map[string]string)
+	for _, family := range families {
+		if strings.HasPrefix(family.GetName(), "onmsgrpc_") {
+			got[family.GetName()] = family.GetHelp()
+		}
+	}
+
+	want := map[string]string{
+		"onmsgrpc_alarm_total":                           "Total number of alarm updates seen from a Horizon instance.",
+		"onmsgrpc_alarm_count":                           "Current number of active alarms for a Horizon instance from the last full snapshot of alarms.",
+		"onmsgrpc_alarm_last_snapshot_timestamp_seconds": "Unix time of the last full alarm snapshot received from a Horizon instance.",
+		"onmsgrpc_heartbeat_total":                       "Total number of heartbeat updates seen from a Horizon instance.",
+		"onmsgrpc_alarm_queue_depth":                     "Current number of alarm batches waiting in the queue.",
+		"onmsgrpc_alarm_dropped_total":                   "Total number of alarms dropped due to the queue being full or the server stopping.",
+		"onmsgrpc_alertmanager_total":                    "Total number of messages sent to alertmanager.",
+		"onmsgrpc_alertmanager_failed_total":             "Total number of messages that could not be sent to alertmanager.",
+		"onmsgrpc_alertmanager_lookup_error_total":       "Total number of errors during lookups of Alertmanagers.",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("metrics = %v, want %v", got, want)
 	}
 }

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // recordingFlush records the batches it is given and signals each one on
@@ -94,7 +94,7 @@ func runBatcher(t *testing.T, b *alarmBatcher) (context.CancelFunc, <-chan struc
 func TestAlarmBatcherFlushThreshold(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 5, time.Hour, slog.New(slog.DiscardHandler))
+		b := newAlarmBatcher(r.flush, 10, 5, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
 		runBatcher(t, b)
 
 		b.add(update(3))
@@ -111,7 +111,7 @@ func TestAlarmBatcherFlushThreshold(t *testing.T) {
 func TestAlarmBatcherFlushThresholdRestartsInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 2, time.Millisecond*200, slog.New(slog.DiscardHandler))
+		b := newAlarmBatcher(r.flush, 10, 2, time.Millisecond*200, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
 		runBatcher(t, b)
 
 		// flush on the threshold just before the interval would have fired
@@ -137,7 +137,7 @@ func TestAlarmBatcherFlushThresholdRestartsInterval(t *testing.T) {
 func TestAlarmBatcherFlushInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*20, slog.New(slog.DiscardHandler))
+		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*20, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
 		runBatcher(t, b)
 
 		b.add(update(3))
@@ -152,7 +152,7 @@ func TestAlarmBatcherFlushInterval(t *testing.T) {
 func TestAlarmBatcherFlushIntervalEmpty(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*10, slog.New(slog.DiscardHandler))
+		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*10, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
 		runBatcher(t, b)
 
 		// several intervals pass with nothing to flush
@@ -166,20 +166,21 @@ func TestAlarmBatcherFlushIntervalEmpty(t *testing.T) {
 
 func TestAlarmBatcherQueueFull(t *testing.T) {
 	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 2, 100, time.Hour, slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	b := newAlarmBatcher(r.flush, 2, 100, time.Hour, slog.New(slog.DiscardHandler), reg)
 
 	// nothing takes from the queue while the batcher is not running
 	b.add(update(1))
 	b.add(update(1))
-	if got := testutil.ToFloat64(b.queueDepth); got != 2 {
+	if got := metricValue(t, reg, "onmsgrpc_alarm_queue_depth"); got != 2 {
 		t.Errorf("queueDepth = %v, want 2", got)
 	}
 
 	b.add(update(3))
-	if got := testutil.ToFloat64(b.dropped); got != 3 {
+	if got := metricValue(t, reg, "onmsgrpc_alarm_dropped_total"); got != 3 {
 		t.Errorf("dropped = %v, want 3 for the alarms in the update that did not fit", got)
 	}
-	if got := testutil.ToFloat64(b.queueDepth); got != 2 {
+	if got := metricValue(t, reg, "onmsgrpc_alarm_queue_depth"); got != 2 {
 		t.Errorf("queueDepth = %v, want 2 after a drop", got)
 	}
 }
@@ -187,14 +188,15 @@ func TestAlarmBatcherQueueFull(t *testing.T) {
 func TestAlarmBatcherQueueDepthAfterFlush(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler))
+		reg := prometheus.NewRegistry()
+		b := newAlarmBatcher(r.flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler), reg)
 		runBatcher(t, b)
 
 		b.add(update(1))
 		r.wait(t, time.Second)
 		synctest.Wait()
 
-		if got := testutil.ToFloat64(b.queueDepth); got != 0 {
+		if got := metricValue(t, reg, "onmsgrpc_alarm_queue_depth"); got != 0 {
 			t.Errorf("queueDepth = %v, want 0 once the queue is flushed", got)
 		}
 	})
@@ -203,7 +205,7 @@ func TestAlarmBatcherQueueDepthAfterFlush(t *testing.T) {
 func TestAlarmBatcherShutdownFlushesBatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler))
+		b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
 		cancel, done := runBatcher(t, b)
 
 		b.add(update(3))
@@ -234,7 +236,8 @@ func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
 		r.flush(batch)
 	}
 
-	b := newAlarmBatcher(flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	b := newAlarmBatcher(flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler), reg)
 	cancel, done := runBatcher(t, b)
 
 	b.add(update(1))
@@ -252,21 +255,22 @@ func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
 	if total != 6 {
 		t.Errorf("flushed %v, want all 6 alarms flushed on shutdown", r.sizes())
 	}
-	if got := testutil.ToFloat64(b.queueDepth); got != 0 {
+	if got := metricValue(t, reg, "onmsgrpc_alarm_queue_depth"); got != 0 {
 		t.Errorf("queueDepth = %v, want 0 after shutdown", got)
 	}
 }
 
 func TestAlarmBatcherAddAfterShutdown(t *testing.T) {
 	r := newRecordingFlush()
-	b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler), reg)
 	cancel, done := runBatcher(t, b)
 
 	cancel()
 	<-done
 
 	b.add(update(2))
-	if got := testutil.ToFloat64(b.dropped); got != 2 {
+	if got := metricValue(t, reg, "onmsgrpc_alarm_dropped_total"); got != 2 {
 		t.Errorf("dropped = %v, want 2 for the update added after shutdown", got)
 	}
 	if got := len(b.queue); got != 0 {
