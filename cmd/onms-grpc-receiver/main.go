@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/andrewheberle/onms-grpc-receiver/pkg/cmd"
+	"github.com/andrewheberle/onms-grpc-receiver/internal/cmd"
 )
 
 func main() {

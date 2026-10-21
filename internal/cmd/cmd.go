@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/andrewheberle/simplecommand"
-	"github.com/andrewheberle/simplecommand/vipercommand"
+	"github.com/andrewheberle/simplecommand/koanfcommand"
 	"github.com/bep/simplecobra"
 )
 
@@ -35,7 +35,7 @@ func (c *rootCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 func Execute(args []string) error {
 	spog := &spogCommand{
-		vipercommand.New(
+		Command: koanfcommand.New(
 			"spog",
 			"Run in SPoG mode",
 			simplecommand.WithLong(`Run in Service Provider over gRPC (SPoG) mode. In this mode gRPC messages from any number of downstream
