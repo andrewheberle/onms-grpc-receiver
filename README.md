@@ -170,3 +170,23 @@ Based on the above an alert from `uuid-of-horizon-instance` with an alert ID `25
 Prometheus metrics are exposed on the `/metrics` path (by default) when the `--metrics.address` flag is provided.
 
 Enabling metrics also enables a health check endpoint at `/-/healthy` that responds with `200 OK`.
+
+### Alarm snapshots
+
+OpenNMS periodically sends a full snapshot of all active alarms, which keeps alerts active in Alertmanager. If snapshots stop arriving, alerts will age out of Alertmanager even though the alarms are still active in OpenNMS.
+
+The `onmsgrpc_alarm_last_snapshot_timestamp_seconds` gauge records the Unix time of the last snapshot received from each Horizon instance (by `instance_id`). The series only exists once a snapshot has been received, so alert both on stale snapshots and on instances that are sending alarm updates but have never sent a snapshot:
+
+```yaml
+groups:
+  - name: onms-grpc-receiver
+    rules:
+      - alert: OpenNMSAlarmSnapshotStale
+        expr: time() - onmsgrpc_alarm_last_snapshot_timestamp_seconds > 900
+        for: 5m
+      - alert: OpenNMSAlarmSnapshotMissing
+        expr: onmsgrpc_alarm_total unless on(instance_id) onmsgrpc_alarm_last_snapshot_timestamp_seconds
+        for: 15m
+```
+
+The second rule also covers the period after the receiver restarts, until the next snapshot arrives.

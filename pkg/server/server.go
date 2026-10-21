@@ -33,9 +33,10 @@ type ServiceSyncServer struct {
 	translator *alertTranslator
 
 	// metrics
-	alarmTotal     *prometheus.CounterVec
-	alarmCount     *prometheus.GaugeVec
-	heartbeatTotal *prometheus.CounterVec
+	alarmTotal        *prometheus.CounterVec
+	alarmCount        *prometheus.GaugeVec
+	alarmLastSnapshot *prometheus.GaugeVec
+	heartbeatTotal    *prometheus.CounterVec
 
 	// batches alarms before they are handled, built from the flush settings
 	flushThreshold int
@@ -91,6 +92,11 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		Help: "Current number of active alarms for a Horizon instance from the last full snapshot of alarms.",
 	},
 		[]string{"instance_id"})
+	s.alarmLastSnapshot = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "onmsgrpc_alarm_last_snapshot_timestamp_seconds",
+		Help: "Unix time of the last full alarm snapshot received from a Horizon instance.",
+	},
+		[]string{"instance_id"})
 	s.heartbeatTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "onmsgrpc_heartbeat_total",
 		Help: "Total number of heartbeat updates seen from a Horizon instance.",
@@ -103,6 +109,7 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		s.alarmTotal,
 		s.alarmCount,
+		s.alarmLastSnapshot,
 		s.heartbeatTotal,
 	)
 	s.registry.MustRegister(s.delivery.collectors()...)
@@ -168,6 +175,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 
 		if isSnapshot {
 			s.alarmCount.WithLabelValues(id).Set(float64(len(alarms)))
+			s.alarmLastSnapshot.WithLabelValues(id).SetToCurrentTime()
 		}
 
 		s.logger.Info("AlarmUpdate",
