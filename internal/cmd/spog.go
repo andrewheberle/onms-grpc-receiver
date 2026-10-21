@@ -158,6 +158,18 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 	g := run.Group{}
 
+	// stop when ctx is cancelled, which happens on SIGINT or SIGTERM
+	stopCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	g.Add(func() error {
+		<-stopCtx.Done()
+		c.logger.Info("shutting down")
+
+		return nil
+	}, func(err error) {
+		stop()
+	})
+
 	// set up TLS for gRPC
 	if c.cert != "" && c.key != "" {
 		ctx, cancel := context.WithCancel(context.Background())

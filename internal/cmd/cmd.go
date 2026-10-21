@@ -33,7 +33,8 @@ func (c *rootCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	return cd.CobraCommand.Help()
 }
 
-func Execute(args []string) error {
+// Execute runs the command given by args, which stops when ctx is cancelled
+func Execute(ctx context.Context, args []string) error {
 	spog := &spogCommand{
 		Command: koanfcommand.New(
 			"spog",
@@ -63,7 +64,7 @@ OpenNMS Horizon instances may be handled as all Heartbeat and AlarmUpdate messag
 		return err
 	}
 
-	if _, err := x.Execute(context.Background(), args); err != nil {
+	if _, err := x.Execute(ctx, args); err != nil {
 		return err
 	}
 
