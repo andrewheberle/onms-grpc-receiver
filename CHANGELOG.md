@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.11.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.10.0...v0.11.0) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **server:** ServiceSyncServer.Start is removed. Use ServiceSyncServer.Serve, which also creates and runs the gRPC server on the given listener, instead of registering the ServiceSyncServer with a gRPC server and calling Start.
+
+### Features
+
+* **server:** add runbook URL template for alerts ([#135](https://github.com/andrewheberle/onms-grpc-receiver/issues/135)) ([9925530](https://github.com/andrewheberle/onms-grpc-receiver/commit/9925530ec2e41270a859c43ee639a9670345c7bb))
+* **server:** expose time of last alarm snapshot per instance ([#133](https://github.com/andrewheberle/onms-grpc-receiver/issues/133)) ([931bc3f](https://github.com/andrewheberle/onms-grpc-receiver/commit/931bc3fa18651cdfa82b9c89fee9b90f9ecb64fa))
+
+
+### Bug Fixes
+
+* **server:** do not fail when stopped before serving has started ([#143](https://github.com/andrewheberle/onms-grpc-receiver/issues/143)) ([91c813e](https://github.com/andrewheberle/onms-grpc-receiver/commit/91c813ed5c95f5efb559eaf92de8b6e3ebda2e5c))
+* **server:** reject a resolve timeout of zero or less ([#137](https://github.com/andrewheberle/onms-grpc-receiver/issues/137)) ([e2396d5](https://github.com/andrewheberle/onms-grpc-receiver/commit/e2396d5d16ba31246e3a2b8a8b78851b6c8f6295))
+
+
+### Code Refactoring
+
+* **server:** replace Start with Serve to own the shutdown order ([#141](https://github.com/andrewheberle/onms-grpc-receiver/issues/141)) ([1334f72](https://github.com/andrewheberle/onms-grpc-receiver/commit/1334f72557e78c2df93c08c035b1943d7360f138))
+
 ## [0.10.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.9.10...v0.10.0) (2026-10-21)
 
 
