@@ -12,6 +12,10 @@ _Avoid_: Node, source, client
 An OpenNMS record of an ongoing problem on a Horizon instance, with a severity and event timestamps.
 _Avoid_: Event, alert (an Alert is what the receiver sends)
 
+**Alarm update**:
+A message from a Horizon instance carrying one or more of its Alarms, either those that changed or a Snapshot.
+_Avoid_: Alarm list, alarm message
+
 **Snapshot**:
 An Alarm update containing every current Alarm on a Horizon instance, rather than only the ones that changed.
 _Avoid_: Full sync, dump

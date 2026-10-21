@@ -20,11 +20,11 @@ import (
 // recordingAlertmanager is a fake Alertmanager that records the requests it
 // receives
 type recordingAlertmanager struct {
-	mu       sync.Mutex
-	paths    []string
-	headers  []http.Header
-	alerts   []models.PostableAlert
-	status   int
+	mu      sync.Mutex
+	paths   []string
+	headers []http.Header
+	alerts  []models.PostableAlert
+	status  int
 	*httptest.Server
 }
 

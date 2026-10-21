@@ -33,22 +33,20 @@ type ServiceSyncServer struct {
 	translator *alertTranslator
 
 	// metrics
-	alarmTotal         *prometheus.CounterVec
-	alarmCount         *prometheus.GaugeVec
-	heartbeatTotal     *prometheus.CounterVec
-	alarmQueueDepth    prometheus.Gauge
-	alarmDropped       prometheus.Counter
+	alarmTotal     *prometheus.CounterVec
+	alarmCount     *prometheus.GaugeVec
+	heartbeatTotal *prometheus.CounterVec
 
-	// batching
-	alarmQueue   chan []instanceAlarm
-	batchMaxSize int
-	batchMaxWait time.Duration
-
-	ctx    context.Context
-	cancel context.CancelFunc
+	// batches alarms before they are handled, built from the flush settings
+	flushThreshold int
+	flushInterval  time.Duration
+	batcher        *alarmBatcher
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
+
+// alarmQueueSize is the number of alarm updates that may wait to be batched
+const alarmQueueSize = 100
 
 type instanceAlarm struct {
 	alarm        *pb.Alarm
@@ -77,6 +75,8 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	}
 	s.delivery = delivery
 
+	s.batcher = newAlarmBatcher(s.handleAlarms, alarmQueueSize, s.flushThreshold, s.flushInterval, s.logger)
+
 	// log every alarm when verbose, or when there is nowhere to send them
 	s.logAlarms = s.verbose || s.deliveryConfig.discovery == discoveryNone
 
@@ -96,14 +96,6 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		Help: "Total number of heartbeat updates seen from a Horizon instance.",
 	},
 		[]string{"instance_id"})
-	s.alarmQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "onmsgrpc_alarm_queue_depth",
-		Help: "Current number of alarm batches waiting in the queue.",
-	})
-	s.alarmDropped = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "onmsgrpc_alarm_dropped_total",
-		Help: "Total number of alarms dropped due to the queue being full.",
-	})
 
 	// register metrics
 	s.registry.MustRegister(
@@ -112,17 +104,14 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		s.alarmTotal,
 		s.alarmCount,
 		s.heartbeatTotal,
-		s.alarmQueueDepth,
-		s.alarmDropped,
 	)
 	s.registry.MustRegister(s.delivery.collectors()...)
+	s.registry.MustRegister(s.batcher.collectors()...)
 
 	return s, nil
 }
 
 func defaultServiceSyncServer() *ServiceSyncServer {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &ServiceSyncServer{
 		// default to no logging
 		logger: slog.New(slog.DiscardHandler),
@@ -141,12 +130,8 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 		},
 
 		// batching
-		batchMaxSize: 10,
-		batchMaxWait: 20 * time.Second,
-		alarmQueue:   make(chan []instanceAlarm, 100),
-
-		ctx:    ctx,
-		cancel: cancel,
+		flushThreshold: 10,
+		flushInterval:  20 * time.Second,
 	}
 }
 
@@ -156,14 +141,11 @@ func (s *ServiceSyncServer) MetricsHandler() http.Handler {
 	})
 }
 
-func (s *ServiceSyncServer) Start() error {
-	s.batchWorker()
+// Start handles received alarms until ctx is cancelled
+func (s *ServiceSyncServer) Start(ctx context.Context) error {
+	s.batcher.run(ctx)
 
 	return nil
-}
-
-func (s *ServiceSyncServer) Shutdown() {
-	s.cancel()
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
@@ -209,66 +191,7 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 		}
 
 		// enqueue - drop if full (best effort)
-		select {
-		case s.alarmQueue <- wrapped:
-			s.alarmQueueDepth.Set(float64(len(s.alarmQueue)))
-		default:
-			alarmcount := len(alarms)
-			s.logger.Warn("alarm queue full, dropping batch", "alarmcount", alarmcount, "instance_id", id)
-			s.alarmDropped.Add(float64(alarmcount))
-		}
-	}
-}
-
-func (s *ServiceSyncServer) batchWorker() {
-	var batch []instanceAlarm
-	timer := time.NewTimer(s.batchMaxWait)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			if len(batch) > 0 {
-				s.logger.Info("batchWorker: flushing on shutdown", "alarmcount", len(batch))
-				s.handleAlarms(batch)
-				s.alarmQueueDepth.Set(0)
-			}
-			return
-
-		case alarms, ok := <-s.alarmQueue:
-			if !ok {
-				// channel closed, flush remainder
-				if len(batch) > 0 {
-					s.logger.Info("batchWorker: flushing on close", "alarmcount", len(batch))
-					s.handleAlarms(batch)
-					s.alarmQueueDepth.Set(0)
-				}
-				return
-			}
-
-			batch = append(batch, alarms...)
-
-			if len(batch) >= s.batchMaxSize {
-				s.logger.Info("batchWorker: flushing on size", "alarmcount", len(batch))
-				s.handleAlarms(batch)
-				batch = nil
-				s.alarmQueueDepth.Set(float64(len(s.alarmQueue)))
-
-				if !timer.Stop() {
-					<-timer.C
-				}
-				timer.Reset(s.batchMaxWait)
-			}
-
-		case <-timer.C:
-			if len(batch) > 0 {
-				s.logger.Info("batchWorker: flushing on timer", "alarmcount", len(batch))
-				s.handleAlarms(batch)
-				batch = nil
-				s.alarmQueueDepth.Set(float64(len(s.alarmQueue)))
-			}
-			timer.Reset(s.batchMaxWait)
-		}
+		s.batcher.add(wrapped)
 	}
 }
 

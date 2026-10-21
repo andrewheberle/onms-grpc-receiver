@@ -205,12 +205,14 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	})
 
 	// set up batch message handler
+	handlerCtx, handlerCancel := context.WithCancel(context.Background())
+	defer handlerCancel()
 	g.Add(func() error {
 		c.logger.Info("started gRPC message handler")
 
-		return c.srv.Start()
+		return c.srv.Start(handlerCtx)
 	}, func(err error) {
-		c.srv.Shutdown()
+		handlerCancel()
 	})
 
 	// set up metrics
