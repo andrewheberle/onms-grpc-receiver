@@ -215,6 +215,22 @@ func TestServeStopsWhenCancelled(t *testing.T) {
 	waitServed(t, done)
 }
 
+// TestServeCancelledBeforeServing checks Serve returns no error when ctx is
+// cancelled before gRPC has started serving
+func TestServeCancelledBeforeServing(t *testing.T) {
+	s, err := NewServiceSyncServer()
+	if err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := s.Serve(ctx, bufconn.Listen(1024*1024)); err != nil {
+		t.Errorf("Serve() error = %v, want nil", err)
+	}
+}
+
 // TestServeFlushesAlarmsReceivedWhileStopping checks that an alarm update
 // received on an open stream after Serve is cancelled still reaches
 // Alertmanager, as gRPC is stopped before the alarms are flushed
