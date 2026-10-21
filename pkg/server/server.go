@@ -598,7 +598,7 @@ func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
 				s.alertmanagerErrors.WithLabelValues(url).Inc()
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
 				logger.Warn("bad status code from alertmanager", "url", url, "status", resp.Status)

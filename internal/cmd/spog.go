@@ -12,7 +12,7 @@ import (
 
 	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/andrewheberle/simplecommand/vipercommand"
+	"github.com/andrewheberle/simplecommand/koanfcommand"
 	"github.com/bep/simplecobra"
 	"github.com/cloudflare/certinel/fswatcher"
 	"github.com/oklog/run"
@@ -48,7 +48,7 @@ type spogCommand struct {
 	alertLabels      map[string]string
 	alertAnnotations map[string]string
 
-	*vipercommand.Command
+	*koanfcommand.Command
 }
 
 func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
@@ -154,7 +154,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	g := run.Group{}
 
@@ -218,7 +218,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 		mux := http.NewServeMux()
 		mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Healthy"))
+			_, _ = w.Write([]byte("Healthy"))
 		})
 		mux.Handle(c.metricsPath, c.srv.MetricsHandler())
 
@@ -237,7 +237,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 			}, func(err error) {
 				go func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-					srv.Shutdown(ctx)
+					_ = srv.Shutdown(ctx)
 					cancel()
 				}()
 			})
@@ -249,7 +249,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 			}, func(err error) {
 				go func() {
 					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-					srv.Shutdown(ctx)
+					_ = srv.Shutdown(ctx)
 					cancel()
 				}()
 			})
