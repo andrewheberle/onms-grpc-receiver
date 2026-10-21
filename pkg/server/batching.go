@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -19,6 +20,11 @@ type alarmBatcher struct {
 
 	// queue of alarm updates waiting to be batched
 	queue chan []instanceAlarm
+
+	// stopped is set once run is shutting down, after which no more alarm
+	// updates are queued
+	mu      sync.RWMutex
+	stopped bool
 
 	// metrics
 	queueDepth prometheus.Gauge
@@ -40,7 +46,7 @@ func newAlarmBatcher(flush func([]instanceAlarm), queueSize, flushThreshold int,
 		}),
 		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "onmsgrpc_alarm_dropped_total",
-			Help: "Total number of alarms dropped due to the queue being full.",
+			Help: "Total number of alarms dropped due to the queue being full or the server stopping.",
 		}),
 	}
 }
@@ -51,8 +57,17 @@ func (b *alarmBatcher) collectors() []prometheus.Collector {
 }
 
 // add queues the alarms of an alarm update, dropping them if the queue is
-// full
+// full or the batcher has stopped
 func (b *alarmBatcher) add(alarms []instanceAlarm) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.stopped {
+		b.logger.Warn("alarm update received while stopping, dropping batch", "alarmcount", len(alarms))
+		b.dropped.Add(float64(len(alarms)))
+		return
+	}
+
 	select {
 	case b.queue <- alarms:
 		b.queueDepth.Set(float64(len(b.queue)))
@@ -67,8 +82,8 @@ func (b *alarmBatcher) add(alarms []instanceAlarm) {
 	}
 }
 
-// run batches and flushes queued alarms until ctx is cancelled, when the
-// current batch is flushed
+// run batches and flushes queued alarms until ctx is cancelled, when it stops
+// queueing alarm updates and flushes everything already queued
 func (b *alarmBatcher) run(ctx context.Context) {
 	var batch []instanceAlarm
 	timer := time.NewTimer(b.flushInterval)
@@ -77,11 +92,21 @@ func (b *alarmBatcher) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			// once stopped no more updates are queued, so the queue can be
+			// drained into the final batch
+			b.mu.Lock()
+			b.stopped = true
+			b.mu.Unlock()
+
+			for len(b.queue) > 0 {
+				batch = append(batch, <-b.queue...)
+			}
+
 			if len(batch) > 0 {
 				b.logger.Info("batchWorker: flushing on shutdown", "alarmcount", len(batch))
 				b.flush(batch)
-				b.queueDepth.Set(0)
 			}
+			b.queueDepth.Set(0)
 			return
 
 		case alarms := <-b.queue:

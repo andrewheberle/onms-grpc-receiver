@@ -209,3 +209,54 @@ func TestAlarmBatcherShutdownFlushesBatch(t *testing.T) {
 		t.Errorf("flushed %v, want the batch of 3 flushed on shutdown", got)
 	}
 }
+
+func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
+	r := newRecordingFlush()
+
+	// hold the first flush so later updates wait in the queue
+	gate := make(chan struct{})
+	var once sync.Once
+	flush := func(batch []instanceAlarm) {
+		once.Do(func() { <-gate })
+		r.flush(batch)
+	}
+
+	b := newAlarmBatcher(flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler))
+	cancel, done := runBatcher(t, b)
+
+	b.add(update(1))
+	b.add(update(2))
+	b.add(update(3))
+
+	cancel()
+	close(gate)
+	<-done
+
+	total := 0
+	for _, n := range r.sizes() {
+		total += n
+	}
+	if total != 6 {
+		t.Errorf("flushed %v, want all 6 alarms flushed on shutdown", r.sizes())
+	}
+	if got := testutil.ToFloat64(b.queueDepth); got != 0 {
+		t.Errorf("queueDepth = %v, want 0 after shutdown", got)
+	}
+}
+
+func TestAlarmBatcherAddAfterShutdown(t *testing.T) {
+	r := newRecordingFlush()
+	b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler))
+	cancel, done := runBatcher(t, b)
+
+	cancel()
+	<-done
+
+	b.add(update(2))
+	if got := testutil.ToFloat64(b.dropped); got != 2 {
+		t.Errorf("dropped = %v, want 2 for the update added after shutdown", got)
+	}
+	if got := len(b.queue); got != 0 {
+		t.Errorf("queue holds %d updates, want none after shutdown", got)
+	}
+}
