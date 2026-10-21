@@ -202,7 +202,9 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	// create register and add server to run group
 	grpcServer := grpc.NewServer(c.opts...)
 	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, c.srv)
+	grpcStopped := make(chan struct{})
 	g.Add(func() error {
+		defer close(grpcStopped)
 		c.logger.Info("started gRPC receiver", "address", c.listenAddress)
 
 		return grpcServer.Serve(l)
@@ -224,7 +226,12 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 		return c.srv.Start(handlerCtx)
 	}, func(err error) {
-		handlerCancel()
+		// alarm updates are received until gRPC has stopped, so only then
+		// stop the handler and flush the alarms it holds
+		go func() {
+			<-grpcStopped
+			handlerCancel()
+		}()
 	})
 
 	// set up metrics
