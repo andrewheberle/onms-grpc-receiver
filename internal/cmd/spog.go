@@ -158,6 +158,18 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 	g := run.Group{}
 
+	// stop when ctx is cancelled, which happens on SIGINT or SIGTERM
+	stopCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	g.Add(func() error {
+		<-stopCtx.Done()
+		c.logger.Info("shutting down")
+
+		return nil
+	}, func(err error) {
+		stop()
+	})
+
 	// set up TLS for gRPC
 	if c.cert != "" && c.key != "" {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -190,7 +202,9 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	// create register and add server to run group
 	grpcServer := grpc.NewServer(c.opts...)
 	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, c.srv)
+	grpcStopped := make(chan struct{})
 	g.Add(func() error {
+		defer close(grpcStopped)
 		c.logger.Info("started gRPC receiver", "address", c.listenAddress)
 
 		return grpcServer.Serve(l)
@@ -212,7 +226,12 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 
 		return c.srv.Start(handlerCtx)
 	}, func(err error) {
-		handlerCancel()
+		// alarm updates are received until gRPC has stopped, so only then
+		// stop the handler and flush the alarms it holds
+		go func() {
+			<-grpcStopped
+			handlerCancel()
+		}()
 	})
 
 	// set up metrics

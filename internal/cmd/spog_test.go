@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestSpogRejectsBuiltinNames(t *testing.T) {
 			// the receiver runs until stopped if startup does not fail
 			done := make(chan error, 1)
 			go func() {
-				done <- Execute(append([]string{"spog", "--silent", "--address", "127.0.0.1:0"}, tt.args...))
+				done <- Execute(context.Background(), append([]string{"spog", "--silent", "--address", "127.0.0.1:0"}, tt.args...))
 			}()
 
 			select {
@@ -39,5 +40,33 @@ func TestSpogRejectsBuiltinNames(t *testing.T) {
 				t.Fatal("Execute() did not fail on startup")
 			}
 		})
+	}
+}
+
+func TestSpogStopsWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Execute(ctx, []string{"spog", "--silent", "--address", "127.0.0.1:0"})
+	}()
+
+	// give the receiver time to start
+	select {
+	case err := <-done:
+		t.Fatalf("Execute() returned %v before being cancelled", err)
+	case <-time.After(time.Millisecond * 200):
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Execute() error = %v, want nil after being cancelled", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Execute() did not stop after being cancelled")
 	}
 }
