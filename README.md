@@ -17,6 +17,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.10.0 --alert
 | --address             | Service gRPC listen address                                | localhost:8080 |
 | --alert.annotations   | Annotations added to all alerts                            |                |
 | --alert.labels        | Labels added to all alerts                                 |                |
+| --alert.runbook-url   | Template for alerts without a runbook URL                  |                |
 | --alertmanager.scheme | Alertmanager scheme (http/https) when SRV records are used | http           |
 | --alertmanager.srv    | Alertmanager SRV Record                                    |                |
 | --alertmanager.url    | Alertmanager URL                                           |                |
@@ -117,6 +118,38 @@ used as the `runbook_url` annotation and the full text as the
 `operator_instructions` annotation. Links in HTML, such as
 `<a href="https://wiki.example.com/runbooks/node-down">the runbook</a>`, are
 used in preference to URLs in the text.
+
+### Runbook URL Template
+
+As stock OpenNMS events have no operator instructions, a template may be set
+with `--alert.runbook-url` (or `ONMS_GRPC_ALERT_RUNBOOK_URL`) to give alerts a
+`runbook_url` annotation when their operator instructions contain no URL. A URL
+in the operator instructions is always used in preference to the template.
+
+The template is a Go [text/template](https://pkg.go.dev/text/template) and is
+given the labels of the alert, including any additional labels, as `.Labels`:
+
+```sh
+onms-grpc-receiver spog --alert.runbook-url 'https://runbooks.example.com/{{ .Labels.alertname }}'
+```
+
+The `alertname` of an alarm is its UEI, so the above results in a `runbook_url`
+of `https://runbooks.example.com/uei.opennms.org/nodes/nodeDown` for a node
+down alarm. The output is not escaped, so use the `pathEscape` function to use
+a label as a single path segment, giving
+`https://runbooks.example.com/uei.opennms.org%2Fnodes%2FnodeDown`:
+
+```sh
+onms-grpc-receiver spog --alert.runbook-url 'https://runbooks.example.com/{{ pathEscape .Labels.alertname }}'
+```
+
+The template is also used for heartbeat alerts, which have an `alertname` of
+`OpenNMSHeartbeat`.
+
+Labels that are not set on an alert are empty, and no `runbook_url` annotation
+is added if the template results in an empty string. The receiver will not
+start if the template is invalid, such as when it refers to `.Lables` rather
+than `.Labels`.
 
 ### Additional Labels and Annotations
 

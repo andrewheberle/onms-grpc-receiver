@@ -3,11 +3,14 @@ package server
 import (
 	"fmt"
 	"html"
+	"io"
+	"log/slog"
 	"maps"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"text/template"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -54,7 +57,19 @@ type alertTranslator struct {
 	// maps instance ID's to the base URL of the Horizon instance
 	urlMap map[string]string
 
+	// template for the runbook URL of alerts with none in their operator
+	// instructions, parsed by validate
+	runbookURLTemplate string
+	runbookTemplate    *template.Template
+
 	resolveTimeout time.Duration
+
+	logger *slog.Logger
+}
+
+// runbookData is what a runbook URL template is executed with
+type runbookData struct {
+	Labels map[string]string
 }
 
 // validate returns an error if any extra label or annotation clashes with a
@@ -64,7 +79,54 @@ func (t *alertTranslator) validate() error {
 		return err
 	}
 
-	return validateAlertFields("annotation", t.extraAnnotations, builtinAnnotations)
+	if err := validateAlertFields("annotation", t.extraAnnotations, builtinAnnotations); err != nil {
+		return err
+	}
+
+	return t.parseRunbookURLTemplate()
+}
+
+// parseRunbookURLTemplate parses the runbook URL template, if set, and
+// executes it once so mistakes such as an unknown field are found at startup
+// rather than for the first alert
+func (t *alertTranslator) parseRunbookURLTemplate() error {
+	if t.runbookURLTemplate == "" {
+		return nil
+	}
+
+	tmpl, err := template.New("runbook_url").
+		Option("missingkey=zero").
+		Funcs(template.FuncMap{"pathEscape": url.PathEscape}).
+		Parse(t.runbookURLTemplate)
+	if err != nil {
+		return fmt.Errorf("invalid runbook URL template: %w", err)
+	}
+
+	if err := tmpl.Execute(io.Discard, runbookData{Labels: map[string]string{"alertname": "OpenNMSHeartbeat"}}); err != nil {
+		return fmt.Errorf("invalid runbook URL template: %w", err)
+	}
+
+	t.runbookTemplate = tmpl
+
+	return nil
+}
+
+// runbookURL returns the runbook URL for an alert with the given labels from
+// the runbook URL template, or "" if there is no template or it failed
+func (t *alertTranslator) runbookURL(labels map[string]string) string {
+	if t.runbookTemplate == nil {
+		return ""
+	}
+
+	var b strings.Builder
+	if err := t.runbookTemplate.Execute(&b, runbookData{Labels: labels}); err != nil {
+		if t.logger != nil {
+			t.logger.Warn("problem executing runbook URL template", "alertname", labels["alertname"], "error", err)
+		}
+		return ""
+	}
+
+	return b.String()
 }
 
 var validName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -168,6 +230,13 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 	maps.Copy(labels, t.extraLabels)
 	maps.Copy(annotations, t.extraAnnotations)
 
+	// use the runbook URL template if the operator instructions had no URL
+	if runbook == "" {
+		if u := t.runbookURL(labels); u != "" {
+			annotations["runbook_url"] = u
+		}
+	}
+
 	alert := models.Alert{
 		Labels: labels,
 	}
@@ -208,6 +277,9 @@ func (t *alertTranslator) heartbeat(instanceName string, now time.Time) *models.
 
 	annotations := make(map[string]string)
 	maps.Copy(annotations, t.extraAnnotations)
+	if u := t.runbookURL(labels); u != "" {
+		annotations["runbook_url"] = u
+	}
 
 	return &models.PostableAlert{
 		Alert: models.Alert{

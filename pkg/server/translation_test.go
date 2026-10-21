@@ -3,6 +3,7 @@ package server
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -293,6 +294,97 @@ func TestAlertTranslatorAlarmRunbookURL(t *testing.T) {
 			}
 			if _, ok := got.Labels["runbook_url"]; ok {
 				t.Errorf("labels = %v, want no runbook_url label", got.Labels)
+			}
+		})
+	}
+}
+
+func TestAlertTranslatorRunbookURLTemplate(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name         string
+		template     string
+		instructions string
+		want         string
+	}{
+		{"no template", "", "", ""},
+		{"template", "https://runbooks.example.com/{{ .Labels.alertname }}", "", "https://runbooks.example.com/uei.opennms.org/nodes/nodeDown"},
+		{"instructions url wins", "https://runbooks.example.com/{{ .Labels.alertname }}", "https://wiki.example.com/runbooks/node-down", "https://wiki.example.com/runbooks/node-down"},
+		{"instructions without url", "https://runbooks.example.com/{{ .Labels.alertname }}", "Check the router.", "https://runbooks.example.com/uei.opennms.org/nodes/nodeDown"},
+		{"path escaped", "https://runbooks.example.com/{{ pathEscape .Labels.alertname }}", "", "https://runbooks.example.com/uei.opennms.org%2Fnodes%2FnodeDown"},
+		{"extra label", "https://runbooks.example.com/{{ .Labels.env }}/{{ .Labels.node_name }}", "", "https://runbooks.example.com/prod/router1"},
+		{"missing label", "https://runbooks.example.com/{{ .Labels.missing }}", "", "https://runbooks.example.com/"},
+		{"renders empty", "{{ .Labels.missing }}", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := &alertTranslator{
+				extraLabels:        map[string]string{"env": "prod"},
+				runbookURLTemplate: tt.template,
+			}
+			if err := tr.validate(); err != nil {
+				t.Fatalf("validate() error = %v", err)
+			}
+
+			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:  1,
+				Uei: "uei.opennms.org/nodes/nodeDown",
+				NodeCriteria: pb.NodeCriteria_builder{
+					NodeLabel: "router1",
+				}.Build(),
+				Severity:             uint32(pb.Severity_MAJOR),
+				FirstEventTime:       uint64(now.UnixMilli()),
+				LastEventTime:        uint64(now.UnixMilli()),
+				OperatorInstructions: tt.instructions,
+			}.Build(), now: now, instanceName: "OpenNMS"})
+			if err != nil {
+				t.Fatalf("alarm() error = %v", err)
+			}
+
+			if runbook, ok := got.Annotations["runbook_url"]; runbook != tt.want || ok != (tt.want != "") {
+				t.Errorf("runbook_url = %q (set %v), want %q", runbook, ok, tt.want)
+			}
+		})
+	}
+}
+
+func TestAlertTranslatorHeartbeatRunbookURLTemplate(t *testing.T) {
+	tr := &alertTranslator{runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.alertname }}"}
+	if err := tr.validate(); err != nil {
+		t.Fatalf("validate() error = %v", err)
+	}
+
+	got := tr.heartbeat("OpenNMS", time.Now())
+
+	if want := "https://runbooks.example.com/OpenNMSHeartbeat"; got.Annotations["runbook_url"] != want {
+		t.Errorf("runbook_url = %q, want %q", got.Annotations["runbook_url"], want)
+	}
+}
+
+func TestAlertTranslatorValidateRunbookURLTemplate(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		wantErr  string
+	}{
+		{"none", "", ""},
+		{"valid", "https://runbooks.example.com/{{ pathEscape .Labels.alertname }}", ""},
+		{"parse error", "https://runbooks.example.com/{{ .Labels.alertname", "invalid runbook URL template: "},
+		{"unknown field", "https://runbooks.example.com/{{ .Lables.alertname }}", "invalid runbook URL template: "},
+		{"unknown function", "https://runbooks.example.com/{{ lower .Labels.alertname }}", "invalid runbook URL template: "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := (&alertTranslator{runbookURLTemplate: tt.template}).validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.HasPrefix(err.Error(), tt.wantErr) {
+				t.Errorf("validate() error = %v, want prefix %q", err, tt.wantErr)
 			}
 		})
 	}
