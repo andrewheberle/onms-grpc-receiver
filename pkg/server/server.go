@@ -52,7 +52,8 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		return nil, err
 	}
 
-	delivery, err := s.deliveryConfig.build(s.logger)
+	// the delivery and pipeline register their own metrics
+	delivery, err := s.deliveryConfig.build(s.logger, s.registry)
 	if err != nil {
 		return nil, err
 	}
@@ -60,15 +61,13 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 	// log every alarm when verbose, or when there is nowhere to send them
 	logAlarms := s.verbose || s.deliveryConfig.discovery == discoveryNone
 
-	s.pipeline = newAlertPipeline(translator, delivery, s.flushThreshold, s.flushInterval, logAlarms, s.logger)
+	s.pipeline = newAlertPipeline(translator, delivery, s.flushThreshold, s.flushInterval, logAlarms, s.logger, s.registry)
 
-	// register metrics
+	// register runtime metrics
 	s.registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
-	s.registry.MustRegister(delivery.collectors()...)
-	s.registry.MustRegister(s.pipeline.collectors()...)
 
 	return s, nil
 }

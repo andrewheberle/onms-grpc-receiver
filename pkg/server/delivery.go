@@ -45,8 +45,9 @@ type deliveryConfig struct {
 	headers map[string]string
 }
 
-// build returns the alertDelivery for the configuration
-func (c deliveryConfig) build(logger *slog.Logger) (*alertDelivery, error) {
+// build returns the alertDelivery for the configuration, registering its
+// metrics with reg
+func (c deliveryConfig) build(logger *slog.Logger, reg prometheus.Registerer) (*alertDelivery, error) {
 	var discovery alertmanagerDiscovery = noDiscovery{}
 
 	switch c.discovery {
@@ -60,7 +61,7 @@ func (c deliveryConfig) build(logger *slog.Logger) (*alertDelivery, error) {
 		discovery = newSRVDiscovery(c.srvScheme, c.srvName, c.srvCacheTTL, logger)
 	}
 
-	return newAlertDelivery(discovery, c.headers, logger), nil
+	return newAlertDelivery(discovery, c.headers, logger, reg), nil
 }
 
 // alertDelivery sends alerts to every Alertmanager currently known
@@ -83,8 +84,9 @@ type alertmanagerDiscovery interface {
 }
 
 // newAlertDelivery returns an alertDelivery that sends to the Alertmanagers
-// found by discovery, adding headers to every request
-func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger) *alertDelivery {
+// found by discovery, adding headers to every request, and registers its
+// metrics with reg
+func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger, reg prometheus.Registerer) *alertDelivery {
 	client := &http.Client{
 		Timeout: time.Second * 5,
 	}
@@ -94,7 +96,7 @@ func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string
 		}
 	}
 
-	return &alertDelivery{
+	d := &alertDelivery{
 		discovery: discovery,
 		client:    client,
 		logger:    logger,
@@ -113,11 +115,9 @@ func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string
 			Help: "Total number of errors during lookups of Alertmanagers.",
 		}),
 	}
-}
+	reg.MustRegister(d.total, d.errors, d.lookupErrors)
 
-// collectors returns the metrics of the alertDelivery for registration
-func (d *alertDelivery) collectors() []prometheus.Collector {
-	return []prometheus.Collector{d.total, d.errors, d.lookupErrors}
+	return d
 }
 
 // send posts alerts to every Alertmanager currently known. An error is

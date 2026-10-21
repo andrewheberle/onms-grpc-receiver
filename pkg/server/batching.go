@@ -32,9 +32,9 @@ type alarmBatcher struct {
 }
 
 // newAlarmBatcher returns an alarmBatcher that holds up to queueSize alarm
-// updates and passes each batch to flush
-func newAlarmBatcher(flush func([]instanceAlarm), queueSize, flushThreshold int, flushInterval time.Duration, logger *slog.Logger) *alarmBatcher {
-	return &alarmBatcher{
+// updates and passes each batch to flush, and registers its metrics with reg
+func newAlarmBatcher(flush func([]instanceAlarm), queueSize, flushThreshold int, flushInterval time.Duration, logger *slog.Logger, reg prometheus.Registerer) *alarmBatcher {
+	b := &alarmBatcher{
 		flush:          flush,
 		flushThreshold: flushThreshold,
 		flushInterval:  flushInterval,
@@ -49,11 +49,9 @@ func newAlarmBatcher(flush func([]instanceAlarm), queueSize, flushThreshold int,
 			Help: "Total number of alarms dropped due to the queue being full or the server stopping.",
 		}),
 	}
-}
+	reg.MustRegister(b.queueDepth, b.dropped)
 
-// collectors returns the metrics of the alarmBatcher for registration
-func (b *alarmBatcher) collectors() []prometheus.Collector {
-	return []prometheus.Collector{b.queueDepth, b.dropped}
+	return b
 }
 
 // add queues the alarms of an alarm update, dropping them if the queue is

@@ -40,9 +40,10 @@ type alertPipeline struct {
 }
 
 // newAlertPipeline returns an alertPipeline that translates alarms and
-// heartbeats with translator and sends them with delivery. Alarms are flushed
-// once a batch reaches flushThreshold or at each flushInterval.
-func newAlertPipeline(translator *alertTranslator, delivery *alertDelivery, flushThreshold int, flushInterval time.Duration, logAlarms bool, logger *slog.Logger) *alertPipeline {
+// heartbeats with translator and sends them with delivery, and registers its
+// metrics with reg. Alarms are flushed once a batch reaches flushThreshold or
+// at each flushInterval.
+func newAlertPipeline(translator *alertTranslator, delivery *alertDelivery, flushThreshold int, flushInterval time.Duration, logAlarms bool, logger *slog.Logger, reg prometheus.Registerer) *alertPipeline {
 	p := &alertPipeline{
 		translator: translator,
 		delivery:   delivery,
@@ -69,19 +70,10 @@ func newAlertPipeline(translator *alertTranslator, delivery *alertDelivery, flus
 		},
 			[]string{"instance_id"}),
 	}
-	p.batcher = newAlarmBatcher(p.flush, alarmQueueSize, flushThreshold, flushInterval, logger)
+	reg.MustRegister(p.alarmTotal, p.alarmCount, p.alarmLastSnapshot, p.heartbeatTotal)
+	p.batcher = newAlarmBatcher(p.flush, alarmQueueSize, flushThreshold, flushInterval, logger, reg)
 
 	return p
-}
-
-// collectors returns the metrics of the alertPipeline for registration
-func (p *alertPipeline) collectors() []prometheus.Collector {
-	return append([]prometheus.Collector{
-		p.alarmTotal,
-		p.alarmCount,
-		p.alarmLastSnapshot,
-		p.heartbeatTotal,
-	}, p.batcher.collectors()...)
 }
 
 // run flushes batched alarms until ctx is cancelled, when it stops accepting

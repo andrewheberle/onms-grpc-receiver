@@ -8,21 +8,22 @@ import (
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/prometheus/alertmanager/api/v2/models"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // newTestPipeline returns a pipeline that sends alerts to the Alertmanager at
 // amURL, with a large flush threshold and interval so alarms are only flushed
-// when the pipeline stops
-func newTestPipeline(t *testing.T, amURL string, cfg translationConfig) *alertPipeline {
+// when the pipeline stops, and the registry its metrics are registered with
+func newTestPipeline(t *testing.T, amURL string, cfg translationConfig) (*alertPipeline, *prometheus.Registry) {
 	t.Helper()
 
-	delivery, err := deliveryConfig{discovery: discoveryStatic, urls: []string{amURL}}.build(slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	delivery, err := deliveryConfig{discovery: discoveryStatic, urls: []string{amURL}}.build(slog.New(slog.DiscardHandler), reg)
 	if err != nil {
 		t.Fatalf("build() error = %v", err)
 	}
 
-	return newAlertPipeline(newTestTranslator(t, cfg), delivery, 1000, time.Hour, false, slog.New(slog.DiscardHandler))
+	return newAlertPipeline(newTestTranslator(t, cfg), delivery, 1000, time.Hour, false, slog.New(slog.DiscardHandler), reg), reg
 }
 
 // runPipeline runs p while feed is called, then stops it so that every queued
@@ -48,7 +49,7 @@ func TestAlertPipelineAlarmUpdate(t *testing.T) {
 	now := time.Now().Truncate(time.Millisecond)
 
 	var got []models.PostableAlert
-	p := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{
+	p, _ := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{
 		extraLabels:    map[string]string{"env": "prod"},
 		resolveTimeout: time.Minute * 5,
 	})
@@ -114,7 +115,7 @@ func TestAlertPipelineLastSnapshot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got []models.PostableAlert
-			p := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{})
+			p, reg := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{})
 
 			runPipeline(p, func() {
 				for _, u := range tt.updates {
@@ -122,11 +123,11 @@ func TestAlertPipelineLastSnapshot(t *testing.T) {
 				}
 			})
 
-			if got := testutil.CollectAndCount(p.alarmLastSnapshot); got != len(tt.want) {
+			if got := metricSeries(t, reg, "onmsgrpc_alarm_last_snapshot_timestamp_seconds"); got != len(tt.want) {
 				t.Fatalf("last snapshot series = %d, want %d", got, len(tt.want))
 			}
 			for _, id := range tt.want {
-				if got := testutil.ToFloat64(p.alarmLastSnapshot.WithLabelValues(id)); got != 1792540800.5 {
+				if got := metricValue(t, reg, "onmsgrpc_alarm_last_snapshot_timestamp_seconds", "instance_id", id); got != 1792540800.5 {
 					t.Errorf("last snapshot for %q = %v, want 1792540800.5", id, got)
 				}
 			}
@@ -141,7 +142,7 @@ func TestAlertPipelineHeartbeat(t *testing.T) {
 	now := time.Now().Truncate(time.Millisecond)
 
 	var got []models.PostableAlert
-	p := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{
+	p, _ := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{
 		extraLabels: map[string]string{"env": "prod"},
 	})
 

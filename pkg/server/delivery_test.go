@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/prometheus/alertmanager/api/v2/models"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // recordingAlertmanager is a fake Alertmanager that records the requests it
@@ -69,7 +69,8 @@ func TestAlertDeliverySend(t *testing.T) {
 	am1 := newRecordingAlertmanager(t, http.StatusOK)
 	am2 := newRecordingAlertmanager(t, http.StatusOK)
 
-	d := newAlertDelivery(staticDiscovery{am1.URL, am2.URL + "/prefix"}, map[string]string{"X-Scope-OrgID": "noc"}, slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	d := newAlertDelivery(staticDiscovery{am1.URL, am2.URL + "/prefix"}, map[string]string{"X-Scope-OrgID": "noc"}, slog.New(slog.DiscardHandler), reg)
 
 	if err := d.send(testAlerts()); err != nil {
 		t.Fatalf("send() error = %v", err)
@@ -94,7 +95,7 @@ func TestAlertDeliverySend(t *testing.T) {
 		if got := tt.am.headers[0].Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type header = %q, want %q", got, "application/json")
 		}
-		if got := testutil.ToFloat64(d.total.WithLabelValues(tt.am.URL + tt.path)); got != 1 {
+		if got := metricValue(t, reg, "onmsgrpc_alertmanager_total", "alertmanager", tt.am.URL+tt.path); got != 1 {
 			t.Errorf("total for %s = %v, want 1", tt.path, got)
 		}
 	}
@@ -104,7 +105,8 @@ func TestAlertDeliverySendFailure(t *testing.T) {
 	ok := newRecordingAlertmanager(t, http.StatusOK)
 	failing := newRecordingAlertmanager(t, http.StatusInternalServerError)
 
-	d := newAlertDelivery(staticDiscovery{ok.URL, failing.URL}, nil, slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	d := newAlertDelivery(staticDiscovery{ok.URL, failing.URL}, nil, slog.New(slog.DiscardHandler), reg)
 
 	if err := d.send(testAlerts()); err != nil {
 		t.Fatalf("send() error = %v, want nil as failures are only counted", err)
@@ -113,23 +115,24 @@ func TestAlertDeliverySendFailure(t *testing.T) {
 	if len(ok.alerts) != 1 {
 		t.Errorf("working alertmanager got %d alerts, want 1", len(ok.alerts))
 	}
-	if got := testutil.ToFloat64(d.errors.WithLabelValues(failing.URL + alertsPath)); got != 1 {
+	if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", failing.URL+alertsPath); got != 1 {
 		t.Errorf("errors for failing alertmanager = %v, want 1", got)
 	}
-	if got := testutil.ToFloat64(d.errors.WithLabelValues(ok.URL + alertsPath)); got != 0 {
+	if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", ok.URL+alertsPath); got != 0 {
 		t.Errorf("errors for working alertmanager = %v, want 0", got)
 	}
 }
 
 func TestAlertDeliverySendLookupError(t *testing.T) {
+	reg := prometheus.NewRegistry()
 	d := newAlertDelivery(discoveryFunc(func() ([]string, error) {
 		return nil, errors.New("lookup failed")
-	}), nil, slog.New(slog.DiscardHandler))
+	}), nil, slog.New(slog.DiscardHandler), reg)
 
 	if err := d.send(testAlerts()); err == nil {
 		t.Error("send() error = nil, want lookup error")
 	}
-	if got := testutil.ToFloat64(d.lookupErrors); got != 1 {
+	if got := metricValue(t, reg, "onmsgrpc_alertmanager_lookup_error_total"); got != 1 {
 		t.Errorf("lookupErrors = %v, want 1", got)
 	}
 }
@@ -139,7 +142,7 @@ func TestAlertDeliverySendNothing(t *testing.T) {
 	d := newAlertDelivery(discoveryFunc(func() ([]string, error) {
 		looked = true
 		return nil, nil
-	}), nil, slog.New(slog.DiscardHandler))
+	}), nil, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
 
 	if err := d.send(nil); err != nil {
 		t.Errorf("send() error = %v", err)
@@ -150,12 +153,13 @@ func TestAlertDeliverySendNothing(t *testing.T) {
 }
 
 func TestNoDiscovery(t *testing.T) {
-	d := newAlertDelivery(noDiscovery{}, nil, slog.New(slog.DiscardHandler))
+	reg := prometheus.NewRegistry()
+	d := newAlertDelivery(noDiscovery{}, nil, slog.New(slog.DiscardHandler), reg)
 
 	if err := d.send(testAlerts()); err != nil {
 		t.Errorf("send() error = %v", err)
 	}
-	if got := testutil.CollectAndCount(d.total); got != 0 {
+	if got := metricSeries(t, reg, "onmsgrpc_alertmanager_total"); got != 0 {
 		t.Errorf("total has %d series, want none as nothing was sent", got)
 	}
 }
