@@ -34,6 +34,7 @@ func WithHeaders(headers map[string]string) ServiceSyncServerOption {
 
 func WithAlertmanagerUrl(list []string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
+		urls := make([]string, len(list))
 		for n, v := range list {
 			// add path to url
 			joined, err := url.JoinPath(v, "/api/v2/alerts")
@@ -45,11 +46,11 @@ func WithAlertmanagerUrl(list []string) ServiceSyncServerOption {
 			if _, err := url.Parse(joined); err != nil {
 				return err
 			}
-			list[n] = joined
+			urls[n] = joined
 		}
 
 		s.alertmanagers = func() ([]string, error) {
-			return list, nil
+			return urls, nil
 		}
 
 		return nil
