@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
@@ -25,8 +26,15 @@ func WithHeaders(headers map[string]string) ServiceSyncServerOption {
 	}
 }
 
+// errAlertmanagerExclusive is returned when Alertmanagers are set both as
+// URLs and as an SRV record
+var errAlertmanagerExclusive = errors.New("alertmanager URLs and SRV record cannot both be set")
+
 func WithAlertmanagerUrl(list []string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
+		if s.deliveryConfig.discovery == discoverySRV {
+			return errAlertmanagerExclusive
+		}
 		s.deliveryConfig.discovery = discoveryStatic
 		s.deliveryConfig.urls = list
 
@@ -44,6 +52,9 @@ func WithSRVCacheTTL(d time.Duration) ServiceSyncServerOption {
 
 func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
+		if s.deliveryConfig.discovery == discoveryStatic {
+			return errAlertmanagerExclusive
+		}
 		s.deliveryConfig.discovery = discoverySRV
 		s.deliveryConfig.srvScheme = scheme
 		s.deliveryConfig.srvName = srv
