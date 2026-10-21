@@ -129,7 +129,13 @@ func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
 	p.batcher.add(wrapped)
 }
 
-// heartbeat sends the alert for a heartbeat received at now
+// heartbeat sends the alert for a heartbeat received at now.
+//
+// The alert is sent synchronously, so a slow Alertmanager holds up the
+// heartbeat stream of that Horizon instance. This is deliberate: Horizon
+// sends a heartbeat every 60 seconds on an asynchronous stream, and sending
+// times out after 5 seconds, so a backlog cannot build up and the only effect
+// is a heartbeat alert arriving a few seconds late.
 func (p *alertPipeline) heartbeat(hb *pb.HeartBeat, now time.Time) {
 	id := hb.GetMonitoringInstance().GetInstanceId()
 	name := hb.GetMonitoringInstance().GetInstanceName()
