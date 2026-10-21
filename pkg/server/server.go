@@ -1,15 +1,11 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -22,26 +18,26 @@ import (
 )
 
 type ServiceSyncServer struct {
-	alertmanagers  func() ([]string, error)
-	logger         *slog.Logger
-	httpClient     *http.Client
-	dnsClient      *net.Resolver
-	registry       *prometheus.Registry
-	verbose        bool
-	srvCacheTTL    time.Duration
+	logger   *slog.Logger
+	registry *prometheus.Registry
+	verbose  bool
+
+	// log every alarm in full, when verbose or no Alertmanager is configured
+	logAlarms bool
+
+	// sends alerts to Alertmanager, built from deliveryConfig
+	deliveryConfig deliveryConfig
+	delivery       *alertDelivery
 
 	// turns alarms and heartbeats into alerts
 	translator *alertTranslator
 
 	// metrics
-	alertmanagerTotal  *prometheus.CounterVec
-	alertmanagerErrors *prometheus.CounterVec
 	alarmTotal         *prometheus.CounterVec
 	alarmCount         *prometheus.GaugeVec
 	heartbeatTotal     *prometheus.CounterVec
 	alarmQueueDepth    prometheus.Gauge
 	alarmDropped       prometheus.Counter
-	amLookupErrors     prometheus.Counter
 
 	// batching
 	alarmQueue   chan []instanceAlarm
@@ -75,17 +71,16 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		return nil, err
 	}
 
+	delivery, err := s.deliveryConfig.build(s.logger)
+	if err != nil {
+		return nil, err
+	}
+	s.delivery = delivery
+
+	// log every alarm when verbose, or when there is nowhere to send them
+	s.logAlarms = s.verbose || s.deliveryConfig.discovery == discoveryNone
+
 	// set up metrics
-	s.alertmanagerTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "onmsgrpc_alertmanager_total",
-		Help: "Total number of messages sent to alertmanager.",
-	},
-		[]string{"alertmanager"})
-	s.alertmanagerErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "onmsgrpc_alertmanager_failed_total",
-		Help: "Total number of messages that could not be sent to alertmanager.",
-	},
-		[]string{"alertmanager"})
 	s.alarmTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "onmsgrpc_alarm_total",
 		Help: "Total number of alarm updates seen from a Horizon instance.",
@@ -109,24 +104,18 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		Name: "onmsgrpc_alarm_dropped_total",
 		Help: "Total number of alarms dropped due to the queue being full.",
 	})
-	s.amLookupErrors = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "onmsgrpc_alertmanager_lookup_error_total",
-		Help: "Total number of errors during lookups of Alertmanagers.",
-	})
 
 	// register metrics
 	s.registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		s.alertmanagerTotal,
-		s.alertmanagerErrors,
 		s.alarmTotal,
 		s.alarmCount,
 		s.heartbeatTotal,
 		s.alarmQueueDepth,
 		s.alarmDropped,
-		s.amLookupErrors,
 	)
+	s.registry.MustRegister(s.delivery.collectors()...)
 
 	return s, nil
 }
@@ -138,14 +127,6 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 		// default to no logging
 		logger: slog.New(slog.DiscardHandler),
 
-		// basic http client
-		httpClient: &http.Client{
-			Timeout: time.Second * 5,
-		},
-
-		// set up dns client
-		dnsClient: new(net.Resolver),
-
 		// ensure registry is non-nil
 		registry: prometheus.NewRegistry(),
 
@@ -155,7 +136,9 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 		},
 
 		// cache SRV records for 30s by default
-		srvCacheTTL: 30 * time.Second,
+		deliveryConfig: deliveryConfig{
+			srvCacheTTL: 30 * time.Second,
+		},
 
 		// batching
 		batchMaxSize: 10,
@@ -296,7 +279,7 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 		id := ia.instanceID
 		name := ia.instanceName
 
-		if s.alertmanagers == nil || s.verbose {
+		if s.logAlarms {
 			s.logger.Info("AlarmUpdate",
 				"alarm_id", alarm.GetId(),
 				"uei", alarm.GetUei(),
@@ -331,11 +314,6 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 				"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
 				"last_update_time", alarm.GetLastUpdateTime(),
 			)
-
-			// finish here if no alertmanagers are configured
-			if s.alertmanagers == nil {
-				continue
-			}
 		}
 
 		alert, err := s.translator.alarm(ia)
@@ -351,7 +329,7 @@ func (s *ServiceSyncServer) handleAlarms(alarms []instanceAlarm) {
 	}
 
 	// send to alertmanager at the end
-	if err := s.send(list); err != nil {
+	if err := s.delivery.send(list); err != nil {
 		s.logger.Error("error during send", "error", err)
 	}
 }
@@ -386,17 +364,11 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			"timestamp", in.GetTimestamp(),
 		)
 
-		// finish here if alertmanager is not set
-		if s.alertmanagers == nil {
-			s.logger.Debug("alertmanager not set")
-			continue
-		}
-
 		hb := s.translator.heartbeat(name, time.Now())
 		s.logger.Debug("adding message to list", "message", hb)
 
 		// send to alertmanager at the end
-		if err := s.send([]*models.PostableAlert{hb}); err != nil {
+		if err := s.delivery.send([]*models.PostableAlert{hb}); err != nil {
 			s.logger.Error("error during send", "error", err)
 		}
 	}
@@ -417,63 +389,4 @@ func discard[T any](stream grpc.BidiStreamingServer[T, emptypb.Empty]) error {
 			return err
 		}
 	}
-}
-
-func (s *ServiceSyncServer) send(list []*models.PostableAlert) error {
-	if len(list) == 0 {
-		return nil
-	}
-
-	ams, err := s.alertmanagers()
-	if err != nil {
-		s.amLookupErrors.Inc()
-		return err
-	}
-
-	payload, err := json.Marshal(list)
-	if err != nil {
-		return err
-	}
-
-	logger := s.logger.With("count", len(list))
-
-	var wg sync.WaitGroup
-	for _, am := range ams {
-		wg.Add(1)
-		go func(url string) {
-			defer wg.Done()
-
-			s.alertmanagerTotal.WithLabelValues(url).Inc()
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-			defer cancel()
-
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-			if err != nil {
-				logger.Warn("error creating request", "url", url, "error", err)
-				s.alertmanagerErrors.WithLabelValues(url).Inc()
-				return
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := s.httpClient.Do(req)
-			if err != nil {
-				logger.Warn("error sending to alertmanager", "url", url, "error", err)
-				s.alertmanagerErrors.WithLabelValues(url).Inc()
-				return
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				logger.Warn("bad status code from alertmanager", "url", url, "status", resp.Status)
-				s.alertmanagerErrors.WithLabelValues(url).Inc()
-				return
-			}
-
-			logger.Info("sent to alertmanager", "url", url, "status", resp.Status)
-		}(am)
-	}
-	wg.Wait()
-
-	return nil
 }
