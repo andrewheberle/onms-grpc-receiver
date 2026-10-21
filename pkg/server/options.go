@@ -117,17 +117,22 @@ func WithResolveTimeout(d time.Duration) ServiceSyncServerOption {
 	}
 }
 
-func WithBatchMaxSize(n int) ServiceSyncServerOption {
+// WithFlushThreshold sets the number of alarms at which a batch is flushed.
+// The threshold is checked once all alarms of an update are added, so a
+// batch may hold more alarms than this.
+func WithFlushThreshold(n int) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.batchMaxSize = n
+		s.flushThreshold = n
 
 		return nil
 	}
 }
 
-func WithBatchMaxWait(d time.Duration) ServiceSyncServerOption {
+// WithFlushInterval sets how often a batch of alarms is flushed, whatever its
+// size. The interval restarts after every flush.
+func WithFlushInterval(d time.Duration) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		s.batchMaxWait = d
+		s.flushInterval = d
 
 		return nil
 	}
