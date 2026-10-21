@@ -29,8 +29,9 @@ type ServiceSyncServer struct {
 	deliveryConfig deliveryConfig
 	delivery       *alertDelivery
 
-	// turns alarms and heartbeats into alerts
-	translator *alertTranslator
+	// turns alarms and heartbeats into alerts, built from translationConfig
+	translationConfig translationConfig
+	translator        *alertTranslator
 
 	// metrics
 	alarmTotal        *prometheus.CounterVec
@@ -66,10 +67,11 @@ func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, 
 		}
 	}
 
-	s.translator.logger = s.logger
-	if err := s.translator.validate(); err != nil {
+	translator, err := newAlertTranslator(s.translationConfig, s.logger)
+	if err != nil {
 		return nil, err
 	}
+	s.translator = translator
 
 	delivery, err := s.deliveryConfig.build(s.logger)
 	if err != nil {
@@ -128,7 +130,7 @@ func defaultServiceSyncServer() *ServiceSyncServer {
 		registry: prometheus.NewRegistry(),
 
 		// default based on upstream
-		translator: &alertTranslator{
+		translationConfig: translationConfig{
 			resolveTimeout: time.Minute * 5,
 		},
 

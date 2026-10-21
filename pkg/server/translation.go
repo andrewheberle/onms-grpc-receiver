@@ -47,9 +47,8 @@ var (
 	}
 )
 
-// alertTranslator turns alarms and heartbeats from Horizon instances into
-// alerts for Alertmanager
-type alertTranslator struct {
+// translationConfig is the configuration an alertTranslator is built from
+type translationConfig struct {
 	// labels and annotations added to all alerts
 	extraLabels      map[string]string
 	extraAnnotations map[string]string
@@ -58,11 +57,19 @@ type alertTranslator struct {
 	urlMap map[string]string
 
 	// template for the runbook URL of alerts with none in their operator
-	// instructions, parsed by validate
+	// instructions
 	runbookURLTemplate string
-	runbookTemplate    *template.Template
 
 	resolveTimeout time.Duration
+}
+
+// alertTranslator turns alarms and heartbeats from Horizon instances into
+// alerts for Alertmanager
+type alertTranslator struct {
+	translationConfig
+
+	// parsed runbookURLTemplate, nil if not set
+	runbookTemplate *template.Template
 
 	logger *slog.Logger
 }
@@ -72,43 +79,52 @@ type runbookData struct {
 	Labels map[string]string
 }
 
-// validate returns an error if any extra label or annotation clashes with a
-// built-in one, has an invalid name or has an empty value
-func (t *alertTranslator) validate() error {
-	if err := validateAlertFields("label", t.extraLabels, builtinLabels); err != nil {
-		return err
+// newAlertTranslator returns a translator for the given configuration. An
+// error is returned if any extra label or annotation clashes with a built-in
+// one, has an invalid name or has an empty value, or if the runbook URL
+// template is invalid.
+func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTranslator, error) {
+	if err := validateAlertFields("label", cfg.extraLabels, builtinLabels); err != nil {
+		return nil, err
 	}
 
-	if err := validateAlertFields("annotation", t.extraAnnotations, builtinAnnotations); err != nil {
-		return err
+	if err := validateAlertFields("annotation", cfg.extraAnnotations, builtinAnnotations); err != nil {
+		return nil, err
 	}
 
-	return t.parseRunbookURLTemplate()
+	tmpl, err := parseRunbookURLTemplate(cfg.runbookURLTemplate)
+	if err != nil {
+		return nil, err
+	}
+
+	return &alertTranslator{
+		translationConfig: cfg,
+		runbookTemplate:   tmpl,
+		logger:            logger,
+	}, nil
 }
 
-// parseRunbookURLTemplate parses the runbook URL template, if set, and
-// executes it once so mistakes such as an unknown field are found at startup
-// rather than for the first alert
-func (t *alertTranslator) parseRunbookURLTemplate() error {
-	if t.runbookURLTemplate == "" {
-		return nil
+// parseRunbookURLTemplate parses a runbook URL template, returning nil if it
+// is empty. The template is executed once so mistakes such as an unknown
+// field are found at startup rather than for the first alert.
+func parseRunbookURLTemplate(s string) (*template.Template, error) {
+	if s == "" {
+		return nil, nil
 	}
 
 	tmpl, err := template.New("runbook_url").
 		Option("missingkey=zero").
 		Funcs(template.FuncMap{"pathEscape": url.PathEscape}).
-		Parse(t.runbookURLTemplate)
+		Parse(s)
 	if err != nil {
-		return fmt.Errorf("invalid runbook URL template: %w", err)
+		return nil, fmt.Errorf("invalid runbook URL template: %w", err)
 	}
 
 	if err := tmpl.Execute(io.Discard, runbookData{Labels: map[string]string{"alertname": "OpenNMSHeartbeat"}}); err != nil {
-		return fmt.Errorf("invalid runbook URL template: %w", err)
+		return nil, fmt.Errorf("invalid runbook URL template: %w", err)
 	}
 
-	t.runbookTemplate = tmpl
-
-	return nil
+	return tmpl, nil
 }
 
 // runbookURL returns the runbook URL for an alert with the given labels from
@@ -120,9 +136,7 @@ func (t *alertTranslator) runbookURL(labels map[string]string) string {
 
 	var b strings.Builder
 	if err := t.runbookTemplate.Execute(&b, runbookData{Labels: labels}); err != nil {
-		if t.logger != nil {
-			t.logger.Warn("problem executing runbook URL template", "alertname", labels["alertname"], "error", err)
-		}
+		t.logger.Warn("problem executing runbook URL template", "alertname", labels["alertname"], "error", err)
 		return ""
 	}
 
