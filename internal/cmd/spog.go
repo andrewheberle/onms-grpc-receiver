@@ -35,6 +35,7 @@ type spogCommand struct {
 	alertManagerSrv    string
 	urlMapping         map[string]string
 	resolveTimeout     time.Duration
+	resolveHold        time.Duration
 	srvCacheTTL        time.Duration
 	maxRecvMsgSize     int
 
@@ -73,6 +74,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.alertRunbookURL, "alert.runbook-url", "", "Template for the runbook URL of alerts without one in their operator instructions")
 	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().DurationVar(&c.resolveTimeout, "resolve.timeout", time.Minute*5, "Resolve timeout for alarms")
+	cmd.Flags().DurationVar(&c.resolveHold, "resolve.hold", 0, "Extra time firing alarm alerts stay active after the resolve timeout, to handle OpenNMS restarts")
 	cmd.Flags().DurationVar(&c.srvCacheTTL, "srv.ttl", time.Second*30, "TTL for resolved SRV records")
 	cmd.Flags().IntVar(&c.maxRecvMsgSize, "grpc.max-recv-size", 64*1024*1024, "Maximum gRPC message size in bytes that can be received")
 
@@ -106,6 +108,7 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		server.WithLogger(c.logger),
 		server.WithURLMapping(c.urlMapping),
 		server.WithResolveTimeout(c.resolveTimeout),
+		server.WithResolveHold(c.resolveHold),
 		server.WithSRVCacheTTL(c.srvCacheTTL),
 		server.WithAlertLabels(c.alertLabels),
 		server.WithAlertAnnotations(c.alertAnnotations),

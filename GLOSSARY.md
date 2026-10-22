@@ -69,3 +69,7 @@ _Avoid_: Conversion, mapping, alert builder
 **Runbook URL template**:
 An operator-configured pattern that builds an Alert's runbook URL from its labels, used when the Alarm's Operator instructions contain no URL.
 _Avoid_: Runbook default, runbook fallback, runbook pattern
+
+**Resolve hold**:
+Operator-configured extra time added to the end of every Alert for a firing Alarm, beyond the resolve timeout, so the Alerts stay active while a Horizon instance restarts and sends no Snapshots.
+_Avoid_: Hold timer, grace period, bridging
