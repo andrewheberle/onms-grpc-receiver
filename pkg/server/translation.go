@@ -18,11 +18,6 @@ import (
 	"github.com/prometheus/alertmanager/api/v2/models"
 )
 
-// clearedAlarmWindow is how long after its last update a cleared alarm is
-// still sent. Older cleared alarms are included in every snapshot and have
-// already been resolved.
-const clearedAlarmWindow = time.Minute * 5
-
 var (
 	// builtinLabels are the labels the receiver may set on alerts itself
 	builtinLabels = []string{
@@ -195,7 +190,7 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 	// skip alarms that were cleared too long ago. Firing alarms are always
 	// sent regardless of age, as snapshots are what keep long-running alarms
 	// active in alertmanager.
-	if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) && lastUpdateTime.Before(ia.now.Add(-clearedAlarmWindow)) {
+	if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) && lastUpdateTime.Before(ia.now.Add(-t.clearedAlarmWindow())) {
 		return nil, nil
 	}
 
@@ -284,6 +279,15 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 	}
 
 	return post, nil
+}
+
+// clearedAlarmWindow is how long after its last update a cleared alarm is
+// still sent. The alert for an alarm ends at most the resolve timeout after
+// it was last sent as firing, which was before it was cleared, so older
+// cleared alarms have already been resolved. They are included in every
+// snapshot, so are not sent again.
+func (t *alertTranslator) clearedAlarmWindow() time.Duration {
+	return t.resolveTimeout
 }
 
 // heartbeat returns the alert for a heartbeat received at now
