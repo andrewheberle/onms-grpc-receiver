@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.11.0...v0.12.0) (2026-10-22)
+
+
+### Features
+
+* **server:** optional hold for alarm alerts ([#149](https://github.com/andrewheberle/onms-grpc-receiver/issues/149)) ([e831c3e](https://github.com/andrewheberle/onms-grpc-receiver/commit/e831c3e29e188ac833a718e356df7c802c64bb3c))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/prometheus/alertmanager to v0.34.1 ([#102](https://github.com/andrewheberle/onms-grpc-receiver/issues/102)) ([6709653](https://github.com/andrewheberle/onms-grpc-receiver/commit/67096530b75349e2454bf36cd36026ce1472d20d))
+* **docker:** switch base image to Chainguard static ([#147](https://github.com/andrewheberle/onms-grpc-receiver/issues/147)) ([3479328](https://github.com/andrewheberle/onms-grpc-receiver/commit/34793283f12ecc628df06a618a974ca7f8bd0c70))
+* **server:** derive cleared alarm window from resolve timeout ([#148](https://github.com/andrewheberle/onms-grpc-receiver/issues/148)) ([cf9a52a](https://github.com/andrewheberle/onms-grpc-receiver/commit/cf9a52a87fe3da0d03cf2f6f578bb9fdda053d42))
+
 ## [0.11.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.10.0...v0.11.0) (2026-10-21)
 
 
