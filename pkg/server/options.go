@@ -128,6 +128,17 @@ func WithResolveTimeout(d time.Duration) ServiceSyncServerOption {
 	}
 }
 
+// WithResolveHold sets extra time that firing alarm alerts stay active after
+// the resolve timeout, so they are not resolved while OpenNMS restarts.
+// Heartbeat alerts and cleared alarms are not held.
+func WithResolveHold(d time.Duration) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.translationConfig.resolveHold = d
+
+		return nil
+	}
+}
+
 // WithFlushThreshold sets the number of alarms at which a batch is flushed.
 // The threshold is checked once all alarms of an update are added, so a
 // batch may hold more alarms than this.

@@ -20,6 +20,8 @@ func TestSpogRejectsBuiltinNames(t *testing.T) {
 		{"annotation env var", nil, map[string]string{"ONMS_GRPC_ALERT_ANNOTATIONS": "summary=x"}, `"summary" clashes with a built-in annotation`},
 		{"runbook url template flag", []string{"--alert.runbook-url", "https://runbooks.example.com/{{ .Lables.alertname }}"}, nil, "invalid runbook URL template"},
 		{"runbook url template env var", nil, map[string]string{"ONMS_GRPC_ALERT_RUNBOOK_URL": "https://runbooks.example.com/{{ .Labels.alertname"}, "invalid runbook URL template"},
+		{"negative resolve hold flag", []string{"--resolve.hold", "-1m"}, nil, "invalid resolve hold -1m0s"},
+		{"negative resolve hold env var", nil, map[string]string{"ONMS_GRPC_RESOLVE_HOLD": "-5m"}, "invalid resolve hold -5m0s"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

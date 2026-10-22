@@ -99,18 +99,21 @@ func TestAlertTranslatorClearedAlarmWindow(t *testing.T) {
 	tests := []struct {
 		name           string
 		resolveTimeout time.Duration
+		resolveHold    time.Duration
 		clearedAgo     time.Duration
 		want           bool
 	}{
-		{"within default resolve timeout", time.Minute * 5, time.Minute * 4, true},
-		{"after default resolve timeout", time.Minute * 5, time.Minute * 6, false},
-		{"within longer resolve timeout", time.Minute * 10, time.Minute * 7, true},
-		{"after longer resolve timeout", time.Minute * 10, time.Minute * 11, false},
-		{"after shorter resolve timeout", time.Minute * 2, time.Minute * 3, false},
+		{"within default resolve timeout", time.Minute * 5, 0, time.Minute * 4, true},
+		{"after default resolve timeout", time.Minute * 5, 0, time.Minute * 6, false},
+		{"within longer resolve timeout", time.Minute * 10, 0, time.Minute * 7, true},
+		{"after longer resolve timeout", time.Minute * 10, 0, time.Minute * 11, false},
+		{"after shorter resolve timeout", time.Minute * 2, 0, time.Minute * 3, false},
+		{"within resolve timeout plus hold", time.Minute * 5, time.Minute * 10, time.Minute * 14, true},
+		{"after resolve timeout plus hold", time.Minute * 5, time.Minute * 10, time.Minute * 16, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := newTestTranslator(t, translationConfig{resolveTimeout: tt.resolveTimeout})
+			tr := newTestTranslator(t, translationConfig{resolveTimeout: tt.resolveTimeout, resolveHold: tt.resolveHold})
 
 			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 				Id:             1,
@@ -167,6 +170,61 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	}
 	if endsAt, want := time.Time(cleared.EndsAt), time.UnixMilli(int64(ms(-time.Second))); !endsAt.Equal(want) {
 		t.Errorf("cleared alert EndsAt = %v, want last update time %v", endsAt, want)
+	}
+}
+
+// TestAlertTranslatorResolveHold ensures the resolve hold only extends firing
+// alarm alerts, leaving cleared alarms and heartbeats as they are
+func TestAlertTranslatorResolveHold(t *testing.T) {
+	now := time.Now()
+	clearedAt := time.UnixMilli(now.Add(-time.Minute).UnixMilli())
+
+	tests := []struct {
+		name          string
+		hold          time.Duration
+		wantFiring    time.Time
+		wantCleared   time.Time
+		wantHeartbeat time.Time
+	}{
+		{"no hold", 0, now.Add(time.Minute * 5), clearedAt, now.Add(time.Minute * 5)},
+		{"hold", time.Minute * 10, now.Add(time.Minute * 15), clearedAt, now.Add(time.Minute * 5)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := newTestTranslator(t, translationConfig{resolveTimeout: time.Minute * 5, resolveHold: tt.hold})
+
+			firing, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:             1,
+				Severity:       uint32(pb.Severity_MAJOR),
+				FirstEventTime: uint64(now.Add(-time.Hour).UnixMilli()),
+				LastEventTime:  uint64(now.Add(-time.Hour).UnixMilli()),
+				LastUpdateTime: uint64(now.Add(-time.Hour).UnixMilli()),
+			}.Build(), now: now, instanceID: "test"})
+			if err != nil {
+				t.Fatalf("alarm() error = %v", err)
+			}
+			if endsAt := time.Time(firing.EndsAt); !endsAt.Equal(tt.wantFiring) {
+				t.Errorf("firing alert EndsAt = %v, want %v", endsAt, tt.wantFiring)
+			}
+
+			cleared, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:             2,
+				Severity:       uint32(pb.Severity_CLEARED),
+				FirstEventTime: uint64(now.Add(-time.Hour).UnixMilli()),
+				LastEventTime:  uint64(clearedAt.UnixMilli()),
+				LastUpdateTime: uint64(clearedAt.UnixMilli()),
+			}.Build(), now: now, instanceID: "test"})
+			if err != nil {
+				t.Fatalf("alarm() error = %v", err)
+			}
+			if endsAt := time.Time(cleared.EndsAt); !endsAt.Equal(tt.wantCleared) {
+				t.Errorf("cleared alert EndsAt = %v, want %v", endsAt, tt.wantCleared)
+			}
+
+			if endsAt := time.Time(tr.heartbeat("OpenNMS", now).EndsAt); !endsAt.Equal(tt.wantHeartbeat) {
+				t.Errorf("heartbeat alert EndsAt = %v, want %v", endsAt, tt.wantHeartbeat)
+			}
+		})
 	}
 }
 
@@ -579,6 +637,32 @@ func TestBuiltinNames(t *testing.T) {
 		if !slices.Contains(builtinAnnotations, name) {
 			t.Errorf("annotation %q is not listed in builtinAnnotations", name)
 		}
+	}
+}
+
+func TestNewAlertTranslatorResolveHold(t *testing.T) {
+	tests := []struct {
+		name    string
+		hold    time.Duration
+		wantErr string
+	}{
+		{"zero", 0, ""},
+		{"positive", time.Minute * 10, ""},
+		{"negative", -time.Minute, "invalid resolve hold -1m0s: must not be negative"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newAlertTranslator(translationConfig{resolveTimeout: time.Minute, resolveHold: tt.hold}, slog.New(slog.DiscardHandler))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("newAlertTranslator() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("newAlertTranslator() error = %v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

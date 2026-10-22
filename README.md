@@ -32,6 +32,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.11.0 --alert
 | --silent              | Disable all logging                                        |                |
 | --verbose             | Log all messages                                           |                |
 | --resolve.timeout     | Resolve timeout for alarms (must be greater than zero)     | 5m             |
+| --resolve.hold        | Extra time firing alarm alerts stay active (see below)     | 0s             |
 | --srv.ttl             | TTL for cached SRV lookups                                 | 30s            |
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
@@ -185,7 +186,8 @@ The receiver will not start if a label or annotation:
 
 Labels form the identity of an alert in Alertmanager, so adding, removing or
 changing an additional label turns every firing alert into a new alert, with the
-previous alert expiring after 5 minutes. Changes to additional annotations do
+previous alert expiring after the resolve timeout (5 minutes by default) plus
+any [hold](#handling-opennms-restarts). Changes to additional annotations do
 not.
 
 ### Alarm link/URL
@@ -197,6 +199,46 @@ onms-grpc-receiver spog --map.url "uuid-of-horizon-instance=http://horizon:8980/
 ```
 
 Based on the above an alert from `uuid-of-horizon-instance` with an alert ID `25` would result in a URL of `http://horizon:8980/opennms/alarm/detail.htm?id=25`
+
+### Handling OpenNMS restarts
+
+OpenNMS sends a snapshot of every alarm every 2 minutes (set by the
+`org.opennms.alarms.snapshot.sync.ms` system property in OpenNMS), and each
+firing alarm alert stays active in Alertmanager for the resolve timeout after it
+was last received. While OpenNMS restarts no snapshots are sent, so with the
+default 5 minute resolve timeout a restart that takes more than about 3 minutes
+resolves every firing alert. Once OpenNMS is back they all fire again, which
+can mean a large wave of resolved and re-opened tickets, messages or calls in
+the integrations downstream of Alertmanager.
+
+The `--resolve.hold` option adds extra time to firing alarm alerts, so they
+stay active as long as the gap between the last snapshot before OpenNMS stops
+and the first snapshot after it starts is shorter than the resolve timeout plus
+the hold:
+
+```sh
+onms-grpc-receiver spog --resolve.hold 10m
+```
+
+A hold of 5 to 10 minutes is a reasonable starting point, but you should review
+it against how long your OpenNMS instances take to restart. The first snapshot
+arrives a few minutes after OpenNMS has started, so the gap is longer than the
+restart itself, and it can be measured from the
+`onmsgrpc_alarm_last_snapshot_timestamp_seconds` metric (see
+[Alarm snapshots](#alarm-snapshots)).
+
+The hold only applies to firing alarm alerts:
+
+* Cleared alarms still resolve their alert at the time they were cleared,
+  including those cleared while OpenNMS was restarting, which are sent with the
+  first snapshot after it starts.
+* The `OpenNMSHeartbeat` alert still resolves the resolve timeout after the last
+  heartbeat, so it shows OpenNMS is down while alarm alerts are being held.
+
+The hold is applied at all times, not only during a restart. OpenNMS does not
+send anything when an alarm is deleted, so an alarm deleted without first being
+cleared resolves its alert the resolve timeout plus the hold after the last
+snapshot that included it.
 
 ## Metrics
 
