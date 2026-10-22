@@ -91,6 +91,45 @@ func TestAlertTranslatorAlarmSkips(t *testing.T) {
 	}
 }
 
+// TestAlertTranslatorClearedAlarmWindow ensures a cleared alarm is sent for as
+// long as alertmanager may still hold a firing alert for it
+func TestAlertTranslatorClearedAlarmWindow(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name           string
+		resolveTimeout time.Duration
+		clearedAgo     time.Duration
+		want           bool
+	}{
+		{"within default resolve timeout", time.Minute * 5, time.Minute * 4, true},
+		{"after default resolve timeout", time.Minute * 5, time.Minute * 6, false},
+		{"within longer resolve timeout", time.Minute * 10, time.Minute * 7, true},
+		{"after longer resolve timeout", time.Minute * 10, time.Minute * 11, false},
+		{"after shorter resolve timeout", time.Minute * 2, time.Minute * 3, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := newTestTranslator(t, translationConfig{resolveTimeout: tt.resolveTimeout})
+
+			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:             1,
+				Severity:       uint32(pb.Severity_CLEARED),
+				FirstEventTime: uint64(now.Add(-time.Hour).UnixMilli()),
+				LastEventTime:  uint64(now.Add(-tt.clearedAgo).UnixMilli()),
+				LastUpdateTime: uint64(now.Add(-tt.clearedAgo).UnixMilli()),
+			}.Build(), now: now, instanceID: "test"})
+			if err != nil {
+				t.Fatalf("alarm() error = %v", err)
+			}
+
+			if sent := got != nil; sent != tt.want {
+				t.Errorf("alarm() sent = %v, want %v", sent, tt.want)
+			}
+		})
+	}
+}
+
 func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	now := time.Now()
 	ms := func(d time.Duration) uint64 {
