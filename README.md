@@ -1,6 +1,7 @@
 # OpenNMS gRPC Receiver
 
 [![codecov](https://codecov.io/gh/andrewheberle/onms-grpc-receiver/graph/badge.svg?token=VSHIGURNMQ)](https://codecov.io/gh/andrewheberle/onms-grpc-receiver)
+[![GitHub version](https://badge.fury.io/gh/andrewheberle%2Fonms-grpc-receiver.svg?icon=si%3Agithub)](https://badge.fury.io/gh/andrewheberle%2Fonms-grpc-receiver)
 
 This is a service that acts as a server for the [OpenNMS gRPC Exporter](https://docs.opennms.com/horizon/33/operation/deep-dive/grpc-exporter/grpc-exporter.html) and forwards alerts to the configured Altermanager instance(s).
 
@@ -42,6 +43,11 @@ export ONMS_GRPC_DEBUG="true"
 export ONMS_GRPC_ALERTMANAGER_URL="http://am-0:9091,http://am-1:9091"
 onms-grpc-receiver spog
 ```
+
+The container build sets the following environment variables by default:
+
+* `ONMS_GRPC_ADDRESS=":8080"`
+* `ONMS_GRPC_METRICS_ADDRESS=":8081"`
 
 ## Alertmanager Integration
 
