@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.12.0...v0.12.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **release:** enable immutable releases ([#152](https://github.com/andrewheberle/onms-grpc-receiver/issues/152)) ([f784e83](https://github.com/andrewheberle/onms-grpc-receiver/commit/f784e8377c6ea4abbe9b424bbcb1b249b2beeb0e))
+
 ## [0.12.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.11.0...v0.12.0) (2026-10-22)
 
 
