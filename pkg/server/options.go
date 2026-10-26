@@ -96,6 +96,19 @@ func WithRunbookURLTemplate(tmpl string) ServiceSyncServerOption {
 	}
 }
 
+// WithSeverityMap sets the alert severity used in place of the name of an
+// OpenNMS severity, keyed by severity name (case-insensitive). Severities not
+// in the map keep their lowercased name. An error is returned by
+// NewServiceSyncServer if a key is not a firing OpenNMS severity or a value is
+// empty.
+func WithSeverityMap(m map[string]string) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.translationConfig.severityMap = m
+
+		return nil
+	}
+}
+
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.translationConfig.urlMap = m
