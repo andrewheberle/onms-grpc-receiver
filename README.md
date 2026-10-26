@@ -93,6 +93,14 @@ Labels are set as follows:
 | Interface (IP address)                   | ip_address         | Only present on alarms with an interface |
 | Node Location                            | site               |                                         |
 
+As `severity` is a label, it is part of the identity of an alert. When an
+alarm is cleared or changes severity, the receiver does not know which severity
+its alert was firing with, so it also sends the alert as resolved for every
+other severity (at the time the alarm was last updated). The previous alert is
+resolved straight away, and Alertmanager does not notify for the others as they
+never fired. A cleared alarm is only sent as these resolved alerts, so no alert
+has a `severity` of `cleared`.
+
 The instance name is the `org.opennms.instance.id` system property of the
 Horizon instance, which defaults to `OpenNMS`. When forwarding alarms from more
 than one Horizon instance, give each a unique instance name, as alarm ID's are
@@ -200,7 +208,7 @@ not.
 ### Severity Map
 
 By default the `severity` label is the lowercased name of the OpenNMS severity
-(`indeterminate`, `warning`, `minor`, `major`, `critical` or `cleared`). To
+(`indeterminate`, `warning`, `minor`, `major` or `critical`). To
 match the severities your Alertmanager routes and inhibit rules expect, map
 OpenNMS severities to other values as follows:
 
@@ -225,12 +233,11 @@ The receiver will not start if a mapping:
   alerts, so neither can be mapped.
 * Has an empty value.
 
-As `severity` is a label, an alarm changing between severities with different
-alert severities becomes a new alert, with the previous alert expiring after the
-resolve timeout plus any [hold](#handling-opennms-restarts). Mapping several
-severities to the same value (for example `major=page,critical=page`) means
-changes between them keep the same alert. Changing the map turns every affected
-firing alert into a new alert.
+Several severities may be mapped to the same value (for example
+`major=page,critical=page`), so changes between them keep the same alert.
+Changing the map turns every affected firing alert into a new alert, with the
+previous alert expiring after the resolve timeout plus any
+[hold](#handling-opennms-restarts).
 
 ### Alarm link/URL
 

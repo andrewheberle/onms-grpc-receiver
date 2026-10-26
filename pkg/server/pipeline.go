@@ -198,16 +198,13 @@ func (p *alertPipeline) flush(alarms []instanceAlarm) {
 			)
 		}
 
-		alert, err := p.translator.alarm(ia)
+		alerts, err := p.translator.alarm(ia)
 		if err != nil {
 			p.logger.Error("problem creating alert", "error", err)
 			continue
 		}
 
-		// add to list unless skipped
-		if alert != nil {
-			list = append(list, alert)
-		}
+		list = append(list, alerts...)
 	}
 
 	// send to alertmanager at the end
