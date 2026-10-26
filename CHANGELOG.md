@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.12.1...v0.13.0) (2026-10-26)
+
+
+### Features
+
+* add severity map to set alert severities for OpenNMS severities ([#158](https://github.com/andrewheberle/onms-grpc-receiver/issues/158)) ([cbf5df6](https://github.com/andrewheberle/onms-grpc-receiver/commit/cbf5df619535a4e4ac0c824a9d33f86e59bd3021))
+
+
+### Bug Fixes
+
+* **deps:** update cgr.dev/chainguard/static:latest docker digest to c12f010 ([#155](https://github.com/andrewheberle/onms-grpc-receiver/issues/155)) ([08bef6d](https://github.com/andrewheberle/onms-grpc-receiver/commit/08bef6d617d9d6b611aa5b559aa6df6b6143e02e))
+* **server:** resolve firing alert when alarm severity changes or is cleared ([#159](https://github.com/andrewheberle/onms-grpc-receiver/issues/159)) ([dc05dd8](https://github.com/andrewheberle/onms-grpc-receiver/commit/dc05dd84e3ab61547ef8d559567032e281a32262))
+
 ## [0.12.1](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.12.0...v0.12.1) (2026-10-23)
 
 
