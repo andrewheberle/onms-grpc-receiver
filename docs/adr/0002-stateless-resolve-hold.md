@@ -1,6 +1,6 @@
 # Stateless resolve hold, applied at all times
 
-While a Horizon instance restarts it sends no Snapshots, so Alerts for firing Alarms reach their end time and resolve, then fire again once Snapshots resume, causing a wave of resolved and re-opened notifications downstream of Alertmanager. The optional Resolve hold (`--resolve.hold`, off by default) adds a fixed extra time to the end of every Alert for a firing Alarm, at all times. The receiver keeps no record of the Alerts it has sent. Heartbeat Alerts and Cleared Alarms are not held, and the window in which Cleared Alarms are still sent is the resolve timeout plus the hold, so a Cleared Alarm is always sent while an Alert for it may still be firing.
+While a Horizon instance restarts it sends no Snapshots, so Alerts for firing Alarms reach their end time and resolve, then fire again once Snapshots resume, causing a wave of resolved and re-opened notifications downstream of Alertmanager. The optional Resolve hold (`--resolve.hold`, off by default) adds a fixed extra time to the end of every Alert for a firing Alarm, at all times. The receiver keeps no record of the Alerts it has sent. Heartbeat Alerts and Cleared Alarms are not held, and the window in which Cleared Alarms are still sent is the resolve timeout plus the hold, so a Cleared Alarm is always sent while an Alert for it may still be firing. (A Cleared Alarm only resolves the Alert that was firing since ADR 0003, as `severity` is part of the Alert's identity.)
 
 ## Considered Options
 

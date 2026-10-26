@@ -75,6 +75,9 @@ type alertTranslator struct {
 	// parsed severityMap, keyed by OpenNMS severity
 	severities map[uint32]string
 
+	// every distinct alert severity of a firing alarm
+	alertSeverities []string
+
 	logger *slog.Logger
 }
 
@@ -116,12 +119,29 @@ func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTrans
 		return nil, err
 	}
 
-	return &alertTranslator{
+	t := &alertTranslator{
 		translationConfig: cfg,
 		runbookTemplate:   tmpl,
 		severities:        severities,
 		logger:            logger,
-	}, nil
+	}
+
+	for _, severity := range firingSeverities {
+		if s := t.alertSeverity(uint32(severity)); !slices.Contains(t.alertSeverities, s) {
+			t.alertSeverities = append(t.alertSeverities, s)
+		}
+	}
+
+	return t, nil
+}
+
+// firingSeverities are the OpenNMS severities of alarms that fire an alert
+var firingSeverities = []pb.Severity{
+	pb.Severity_INDETERMINATE,
+	pb.Severity_WARNING,
+	pb.Severity_MINOR,
+	pb.Severity_MAJOR,
+	pb.Severity_CRITICAL,
 }
 
 // parseSeverityMap checks a severity map, returning it keyed by OpenNMS
@@ -232,10 +252,19 @@ func validateAlertFields(kind string, fields map[string]string, builtin []string
 	return nil
 }
 
-// alarm returns the alert for an alarm, or nil if the alarm should not be
-// sent
-func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error) {
+// alarm returns the alerts for an alarm, or none if the alarm should not be
+// sent. A firing alarm's own alert is first.
+//
+// The severity label is part of the identity of an alert, so when an alarm
+// changes severity or is cleared, the alert for its previous severity would
+// otherwise stay firing until it expires. As the previous severity is not
+// known, a cleared alarm is sent as a resolved alert for every alert
+// severity, and a firing alarm updated within the cleared alarm window is
+// also sent as a resolved alert for every other alert severity. Alertmanager
+// does not notify for resolved alerts that never fired. See ADR 0003.
+func (t *alertTranslator) alarm(ia instanceAlarm) ([]*models.PostableAlert, error) {
 	alarm := ia.alarm
+	cleared := alarm.GetSeverity() == uint32(pb.Severity_CLEARED)
 
 	// ignore Normal severity alarms
 	if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
@@ -253,7 +282,8 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 	// skip alarms that were cleared too long ago. Firing alarms are always
 	// sent regardless of age, as snapshots are what keep long-running alarms
 	// active in alertmanager.
-	if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) && lastUpdateTime.Before(ia.now.Add(-t.clearedAlarmWindow())) {
+	recent := !lastUpdateTime.Before(ia.now.Add(-t.clearedAlarmWindow()))
+	if cleared && !recent {
 		return nil, nil
 	}
 
@@ -263,7 +293,6 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 		"alarm_id":      fmt.Sprint(alarm.GetId()),
 		"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
 		"instance_name": ia.instanceName,
-		"severity":      t.alertSeverity(alarm.GetSeverity()),
 	}
 
 	// add service if set
@@ -307,41 +336,60 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 	maps.Copy(labels, t.extraLabels)
 	maps.Copy(annotations, t.extraAnnotations)
 
-	// use the runbook URL template if the operator instructions had no URL
-	if runbook == "" {
-		if u := t.runbookURL(labels); u != "" {
-			annotations["runbook_url"] = u
-		}
-	}
-
-	alert := models.Alert{
-		Labels: labels,
-	}
-
 	// add generator URL if mapping set
+	var generatorURL strfmt.URI
 	if baseUrl := inmap(ia.instanceID, t.urlMap); baseUrl != "" {
 		u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
 		if err != nil {
 			return nil, fmt.Errorf("problem creating generatorURL: %w", err)
 		}
-		alert.GeneratorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
+		generatorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
 	}
 
-	// default start and end time based on first event time and when the
-	// alarm was received plus the resolve timeout and hold
-	post := &models.PostableAlert{
-		Alert:       alert,
-		Annotations: annotations,
-		StartsAt:    strfmt.DateTime(firstEventTime),
-		EndsAt:      strfmt.DateTime(ia.now.Add(t.resolveTimeout + t.resolveHold)),
+	newAlert := func(severity string, endsAt time.Time) *models.PostableAlert {
+		labels := maps.Clone(labels)
+		labels["severity"] = severity
+		annotations := maps.Clone(annotations)
+
+		// use the runbook URL template if the operator instructions had no URL
+		if runbook == "" {
+			if u := t.runbookURL(labels); u != "" {
+				annotations["runbook_url"] = u
+			}
+		}
+
+		return &models.PostableAlert{
+			Alert: models.Alert{
+				Labels:       labels,
+				GeneratorURL: generatorURL,
+			},
+			Annotations: annotations,
+			StartsAt:    strfmt.DateTime(firstEventTime),
+			EndsAt:      strfmt.DateTime(endsAt),
+		}
 	}
 
-	// end cleared alerts when the alarm was cleared
-	if alarm.GetSeverity() == uint32(pb.Severity_CLEARED) {
-		post.EndsAt = strfmt.DateTime(lastUpdateTime)
+	var alerts []*models.PostableAlert
+
+	// firing alerts end when the alarm was received plus the resolve timeout
+	// and hold
+	severity := t.alertSeverity(alarm.GetSeverity())
+	if !cleared {
+		alerts = append(alerts, newAlert(severity, ia.now.Add(t.resolveTimeout+t.resolveHold)))
+		if !recent {
+			return alerts, nil
+		}
 	}
 
-	return post, nil
+	// end the alerts for other severities when the alarm was last updated
+	for _, s := range t.alertSeverities {
+		if !cleared && s == severity {
+			continue
+		}
+		alerts = append(alerts, newAlert(s, lastUpdateTime))
+	}
+
+	return alerts, nil
 }
 
 // clearedAlarmWindow is how long after its last update a cleared alarm is

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
+	"github.com/prometheus/alertmanager/api/v2/models"
 )
 
 // newTestTranslator returns a translator for cfg, with a resolve timeout of 5
@@ -26,6 +27,17 @@ func newTestTranslator(t *testing.T, cfg translationConfig) *alertTranslator {
 	}
 
 	return tr
+}
+
+// firstAlarmAlert returns the first alert for an alarm, which is the alarm's
+// own alert if it is firing, or nil if it is not sent
+func firstAlarmAlert(tr *alertTranslator, ia instanceAlarm) (*models.PostableAlert, error) {
+	alerts, err := tr.alarm(ia)
+	if err != nil || len(alerts) == 0 {
+		return nil, err
+	}
+
+	return alerts[0], nil
 }
 
 func TestAlertTranslatorAlarmSkips(t *testing.T) {
@@ -79,7 +91,7 @@ func TestAlertTranslatorAlarmSkips(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := newTestTranslator(t, translationConfig{})
 
-			got, err := tr.alarm(instanceAlarm{alarm: tt.alarm, now: now, instanceID: "test"})
+			got, err := firstAlarmAlert(tr, instanceAlarm{alarm: tt.alarm, now: now, instanceID: "test"})
 			if err != nil {
 				t.Fatalf("alarm() error = %v", err)
 			}
@@ -115,7 +127,7 @@ func TestAlertTranslatorClearedAlarmWindow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := newTestTranslator(t, translationConfig{resolveTimeout: tt.resolveTimeout, resolveHold: tt.resolveHold})
 
-			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 				Id:             1,
 				Severity:       uint32(pb.Severity_CLEARED),
 				FirstEventTime: uint64(now.Add(-time.Hour).UnixMilli()),
@@ -144,7 +156,7 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 
 	tr := newTestTranslator(t, translationConfig{resolveTimeout: time.Minute * 3})
 
-	firing, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+	firing, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             1,
 		Severity:       uint32(pb.Severity_MAJOR),
 		FirstEventTime: ms(-time.Hour),
@@ -158,7 +170,7 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 		t.Errorf("firing alert EndsAt = %v, want %v", endsAt, want)
 	}
 
-	cleared, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+	cleared, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             2,
 		Severity:       uint32(pb.Severity_CLEARED),
 		FirstEventTime: ms(-time.Hour),
@@ -193,7 +205,7 @@ func TestAlertTranslatorResolveHold(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := newTestTranslator(t, translationConfig{resolveTimeout: time.Minute * 5, resolveHold: tt.hold})
 
-			firing, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			firing, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 				Id:             1,
 				Severity:       uint32(pb.Severity_MAJOR),
 				FirstEventTime: uint64(now.Add(-time.Hour).UnixMilli()),
@@ -207,7 +219,7 @@ func TestAlertTranslatorResolveHold(t *testing.T) {
 				t.Errorf("firing alert EndsAt = %v, want %v", endsAt, tt.wantFiring)
 			}
 
-			cleared, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			cleared, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 				Id:             2,
 				Severity:       uint32(pb.Severity_CLEARED),
 				FirstEventTime: uint64(now.Add(-time.Hour).UnixMilli()),
@@ -233,7 +245,7 @@ func TestAlertTranslatorAlarmLabelsAndAnnotations(t *testing.T) {
 
 	tr := newTestTranslator(t, translationConfig{})
 
-	got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+	got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 		Id:  25,
 		Uei: "uei.opennms.org/nodes/nodeLostService",
 		NodeCriteria: pb.NodeCriteria_builder{
@@ -288,7 +300,7 @@ func TestAlertTranslatorAlarmOmitsEmptyAnnotations(t *testing.T) {
 
 	tr := newTestTranslator(t, translationConfig{})
 
-	got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+	got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             1,
 		Uei:            "uei.opennms.org/nodes/nodeDown",
 		Severity:       uint32(pb.Severity_MAJOR),
@@ -325,7 +337,7 @@ func TestAlertTranslatorAlarmGeneratorURL(t *testing.T) {
 				urlMap: map[string]string{"6f8a7c1e-uuid": "https://horizon.example.com/opennms"},
 			})
 
-			got, err := tr.alarm(instanceAlarm{alarm: fullAlarm(now), now: now, instanceID: tt.instanceID})
+			got, err := firstAlarmAlert(tr, instanceAlarm{alarm: fullAlarm(now), now: now, instanceID: tt.instanceID})
 			if err != nil {
 				t.Fatalf("alarm() error = %v", err)
 			}
@@ -392,7 +404,7 @@ func TestAlertTranslatorAlarmRunbookURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := newTestTranslator(t, translationConfig{})
 
-			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 				Id:                   1,
 				Uei:                  "uei.opennms.org/nodes/nodeDown",
 				Severity:             uint32(pb.Severity_MAJOR),
@@ -439,7 +451,7 @@ func TestAlertTranslatorRunbookURLTemplate(t *testing.T) {
 				runbookURLTemplate: tt.template,
 			})
 
-			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 				Id:  1,
 				Uei: "uei.opennms.org/nodes/nodeDown",
 				NodeCriteria: pb.NodeCriteria_builder{
@@ -531,7 +543,7 @@ func TestAlertTranslatorAlarmExtraLabelsAndAnnotations(t *testing.T) {
 		extraAnnotations: map[string]string{"dashboard": "https://grafana/d/onms"},
 	})
 
-	got, err := tr.alarm(instanceAlarm{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"})
+	got, err := firstAlarmAlert(tr, instanceAlarm{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"})
 	if err != nil {
 		t.Fatalf("alarm() error = %v", err)
 	}
@@ -565,7 +577,7 @@ func TestAlertTranslatorAlarmExtraLabelsAndAnnotations(t *testing.T) {
 	}
 
 	// an alarm with no annotations of its own still gets the extra ones
-	got, err = tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+	got, err = firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             2,
 		Uei:            "uei.opennms.org/nodes/nodeDown",
 		Severity:       uint32(pb.Severity_MAJOR),
@@ -621,7 +633,7 @@ func TestBuiltinNames(t *testing.T) {
 
 	tr := newTestTranslator(t, translationConfig{})
 
-	alarm, err := tr.alarm(instanceAlarm{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"})
+	alarm, err := firstAlarmAlert(tr, instanceAlarm{alarm: fullAlarm(now), now: now, instanceName: "OpenNMS"})
 	if err != nil {
 		t.Fatalf("alarm() error = %v", err)
 	}
@@ -771,13 +783,12 @@ func TestAlertTranslatorAlarmSeverityMap(t *testing.T) {
 		{"unmapped falls through", map[string]string{"critical": "P1"}, pb.Severity_MINOR, "minor"},
 		{"many to one", map[string]string{"major": "page", "critical": "page"}, pb.Severity_MAJOR, "page"},
 		{"indeterminate", map[string]string{"indeterminate": "info"}, pb.Severity_INDETERMINATE, "info"},
-		{"cleared not mapped", map[string]string{"major": "P2"}, pb.Severity_CLEARED, "cleared"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := newTestTranslator(t, translationConfig{severityMap: tt.severityMap})
 
-			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 				Id:             1,
 				Uei:            "uei.opennms.org/nodes/nodeDown",
 				Severity:       uint32(tt.severity),
@@ -805,7 +816,7 @@ func TestAlertTranslatorSeverityMapRunbookURLTemplate(t *testing.T) {
 		runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.severity }}",
 	})
 
-	got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+	got, err := firstAlarmAlert(tr, instanceAlarm{alarm: pb.Alarm_builder{
 		Id:             1,
 		Uei:            "uei.opennms.org/nodes/nodeDown",
 		Severity:       uint32(pb.Severity_MAJOR),
@@ -848,6 +859,83 @@ func TestNewAlertTranslatorSeverityMap(t *testing.T) {
 			}
 			if err == nil || err.Error() != tt.wantErr {
 				t.Errorf("newAlertTranslator() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestAlertTranslatorAlarmSeverityChange ensures the alert for an alarm's
+// previous severity is resolved when it is cleared or changes severity
+func TestAlertTranslatorAlarmSeverityChange(t *testing.T) {
+	now := time.Now()
+	recent := time.UnixMilli(now.Add(-time.Minute).UnixMilli())
+	old := time.UnixMilli(now.Add(-time.Hour).UnixMilli())
+	merged := map[string]string{"major": "page", "critical": "page"}
+
+	tests := []struct {
+		name        string
+		severityMap map[string]string
+		severity    pb.Severity
+		lastUpdate  time.Time
+		wantFiring  string
+		wantResolve []string
+	}{
+		{"firing updated long ago", nil, pb.Severity_MAJOR, old, "major", nil},
+		{"firing updated recently", nil, pb.Severity_MAJOR, recent, "major", []string{"indeterminate", "warning", "minor", "critical"}},
+		{"cleared recently", nil, pb.Severity_CLEARED, recent, "", []string{"indeterminate", "warning", "minor", "major", "critical"}},
+		{"cleared long ago", nil, pb.Severity_CLEARED, old, "", nil},
+		{"cleared with merged severities", merged, pb.Severity_CLEARED, recent, "", []string{"indeterminate", "warning", "minor", "page"}},
+		{"firing with merged severities", merged, pb.Severity_CRITICAL, recent, "page", []string{"indeterminate", "warning", "minor"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := newTestTranslator(t, translationConfig{
+				severityMap:        tt.severityMap,
+				runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.severity }}",
+			})
+
+			alerts, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:             1,
+				Uei:            "uei.opennms.org/nodes/nodeDown",
+				Severity:       uint32(tt.severity),
+				FirstEventTime: uint64(old.Add(-time.Hour).UnixMilli()),
+				LastEventTime:  uint64(tt.lastUpdate.UnixMilli()),
+				LastUpdateTime: uint64(tt.lastUpdate.UnixMilli()),
+			}.Build(), now: now, instanceName: "OpenNMS"})
+			if err != nil {
+				t.Fatalf("alarm() error = %v", err)
+			}
+
+			var firing string
+			var resolved []string
+			for i, a := range alerts {
+				severity := a.Labels["severity"]
+				if a.Labels["alarm_id"] != "1" || a.Labels["alertname"] != "uei.opennms.org/nodes/nodeDown" {
+					t.Errorf("alert %d labels = %v, want the alarm's labels", i, a.Labels)
+				}
+				if runbook, want := a.Annotations["runbook_url"], "https://runbooks.example.com/"+severity; runbook != want {
+					t.Errorf("alert %d runbook_url = %q, want %q", i, runbook, want)
+				}
+
+				endsAt := time.Time(a.EndsAt)
+				if endsAt.After(now) {
+					if i != 0 {
+						t.Errorf("firing alert %q is alert %d, want 0", severity, i)
+					}
+					firing = severity
+					continue
+				}
+				if !endsAt.Equal(tt.lastUpdate) {
+					t.Errorf("resolved alert %q EndsAt = %v, want last update time %v", severity, endsAt, tt.lastUpdate)
+				}
+				resolved = append(resolved, severity)
+			}
+
+			if firing != tt.wantFiring {
+				t.Errorf("firing severity = %q, want %q", firing, tt.wantFiring)
+			}
+			if !slices.Equal(resolved, tt.wantResolve) {
+				t.Errorf("resolved severities = %v, want %v", resolved, tt.wantResolve)
 			}
 		})
 	}
