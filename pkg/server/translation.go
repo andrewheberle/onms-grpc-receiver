@@ -51,6 +51,9 @@ type translationConfig struct {
 	// maps instance ID's to the base URL of the Horizon instance
 	urlMap map[string]string
 
+	// maps OpenNMS severity names to the alert severity used instead
+	severityMap map[string]string
+
 	// template for the runbook URL of alerts with none in their operator
 	// instructions
 	runbookURLTemplate string
@@ -69,6 +72,9 @@ type alertTranslator struct {
 	// parsed runbookURLTemplate, nil if not set
 	runbookTemplate *template.Template
 
+	// parsed severityMap, keyed by OpenNMS severity
+	severities map[uint32]string
+
 	logger *slog.Logger
 }
 
@@ -80,8 +86,8 @@ type runbookData struct {
 // newAlertTranslator returns a translator for the given configuration. An
 // error is returned if any extra label or annotation clashes with a built-in
 // one, has an invalid name or has an empty value, if the runbook URL template
-// is invalid, if the resolve timeout is not greater than zero, or if the
-// resolve hold is negative.
+// or severity map is invalid, if the resolve timeout is not greater than zero,
+// or if the resolve hold is negative.
 func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTranslator, error) {
 	// a resolve timeout of zero or less would resolve alerts as they are sent
 	if cfg.resolveTimeout <= 0 {
@@ -105,11 +111,60 @@ func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTrans
 		return nil, err
 	}
 
+	severities, err := parseSeverityMap(cfg.severityMap)
+	if err != nil {
+		return nil, err
+	}
+
 	return &alertTranslator{
 		translationConfig: cfg,
 		runbookTemplate:   tmpl,
+		severities:        severities,
 		logger:            logger,
 	}, nil
+}
+
+// parseSeverityMap checks a severity map, returning it keyed by OpenNMS
+// severity, or a single error describing every problem found. Only firing
+// severities may be mapped, as normal alarms are never sent and cleared
+// alarms are how alerts are ended.
+func parseSeverityMap(m map[string]string) (map[uint32]string, error) {
+	severities := make(map[uint32]string, len(m))
+
+	var problems []string
+	for _, name := range slices.Sorted(maps.Keys(m)) {
+		value, ok := pb.Severity_value[strings.ToUpper(name)]
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("%q is not an OpenNMS severity", name))
+		case value == int32(pb.Severity_NORMAL) || value == int32(pb.Severity_CLEARED):
+			problems = append(problems, fmt.Sprintf("%q is not a firing severity", name))
+		case m[name] == "":
+			problems = append(problems, fmt.Sprintf("%q has an empty value", name))
+		default:
+			if _, dup := severities[uint32(value)]; dup {
+				problems = append(problems, fmt.Sprintf("%q is set more than once", strings.ToLower(name)))
+				continue
+			}
+			severities[uint32(value)] = m[name]
+		}
+	}
+
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("invalid severity map: %s", strings.Join(problems, "; "))
+	}
+
+	return severities, nil
+}
+
+// alertSeverity returns the alert severity for an OpenNMS severity, which is
+// its lowercased name unless the severity map replaces it
+func (t *alertTranslator) alertSeverity(severity uint32) string {
+	if s, ok := t.severities[severity]; ok {
+		return s
+	}
+
+	return strings.ToLower(pb.Severity_name[int32(severity)])
 }
 
 // parseRunbookURLTemplate parses a runbook URL template, returning nil if it
@@ -208,7 +263,7 @@ func (t *alertTranslator) alarm(ia instanceAlarm) (*models.PostableAlert, error)
 		"alarm_id":      fmt.Sprint(alarm.GetId()),
 		"node_name":     alarm.GetNodeCriteria().GetNodeLabel(),
 		"instance_name": ia.instanceName,
-		"severity":      strings.ToLower(pb.Severity_name[int32(alarm.GetSeverity())]),
+		"severity":      t.alertSeverity(alarm.GetSeverity()),
 	}
 
 	// add service if set

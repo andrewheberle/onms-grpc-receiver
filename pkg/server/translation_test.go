@@ -755,3 +755,100 @@ func TestNewAlertTranslatorAnnotations(t *testing.T) {
 		})
 	}
 }
+
+func TestAlertTranslatorAlarmSeverityMap(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name        string
+		severityMap map[string]string
+		severity    pb.Severity
+		want        string
+	}{
+		{"no map", nil, pb.Severity_MAJOR, "major"},
+		{"mapped", map[string]string{"major": "P2"}, pb.Severity_MAJOR, "P2"},
+		{"key case-insensitive", map[string]string{"Critical": "page"}, pb.Severity_CRITICAL, "page"},
+		{"unmapped falls through", map[string]string{"critical": "P1"}, pb.Severity_MINOR, "minor"},
+		{"many to one", map[string]string{"major": "page", "critical": "page"}, pb.Severity_MAJOR, "page"},
+		{"indeterminate", map[string]string{"indeterminate": "info"}, pb.Severity_INDETERMINATE, "info"},
+		{"cleared not mapped", map[string]string{"major": "P2"}, pb.Severity_CLEARED, "cleared"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := newTestTranslator(t, translationConfig{severityMap: tt.severityMap})
+
+			got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:             1,
+				Uei:            "uei.opennms.org/nodes/nodeDown",
+				Severity:       uint32(tt.severity),
+				FirstEventTime: uint64(now.UnixMilli()),
+				LastEventTime:  uint64(now.UnixMilli()),
+				LastUpdateTime: uint64(now.UnixMilli()),
+			}.Build(), now: now, instanceName: "OpenNMS"})
+			if err != nil {
+				t.Fatalf("alarm() error = %v", err)
+			}
+
+			if severity := got.Labels["severity"]; severity != tt.want {
+				t.Errorf("severity = %q, want %q", severity, tt.want)
+			}
+		})
+	}
+}
+
+// TestAlertTranslatorSeverityMapRunbookURLTemplate ensures the runbook URL
+// template is given the mapped alert severity
+func TestAlertTranslatorSeverityMapRunbookURLTemplate(t *testing.T) {
+	now := time.Now()
+	tr := newTestTranslator(t, translationConfig{
+		severityMap:        map[string]string{"major": "P2"},
+		runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.severity }}",
+	})
+
+	got, err := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+		Id:             1,
+		Uei:            "uei.opennms.org/nodes/nodeDown",
+		Severity:       uint32(pb.Severity_MAJOR),
+		FirstEventTime: uint64(now.UnixMilli()),
+		LastEventTime:  uint64(now.UnixMilli()),
+	}.Build(), now: now, instanceName: "OpenNMS"})
+	if err != nil {
+		t.Fatalf("alarm() error = %v", err)
+	}
+
+	if runbook, want := got.Annotations["runbook_url"], "https://runbooks.example.com/P2"; runbook != want {
+		t.Errorf("runbook_url = %q, want %q", runbook, want)
+	}
+}
+
+func TestNewAlertTranslatorSeverityMap(t *testing.T) {
+	tests := []struct {
+		name        string
+		severityMap map[string]string
+		wantErr     string
+	}{
+		{"none", map[string]string{}, ""},
+		{"valid", map[string]string{"indeterminate": "info", "warning": "P4", "minor": "P3", "major": "P2", "critical": "P1"}, ""},
+		{"case-insensitive", map[string]string{"CRITICAL": "P1", "Major": "P2"}, ""},
+		{"unknown", map[string]string{"crit": "P1"}, `invalid severity map: "crit" is not an OpenNMS severity`},
+		{"normal", map[string]string{"normal": "ok"}, `invalid severity map: "normal" is not a firing severity`},
+		{"cleared", map[string]string{"cleared": "resolved"}, `invalid severity map: "cleared" is not a firing severity`},
+		{"empty value", map[string]string{"warning": ""}, `invalid severity map: "warning" has an empty value`},
+		{"duplicate", map[string]string{"MAJOR": "P2", "major": "P1"}, `invalid severity map: "major" is set more than once`},
+		{"multiple", map[string]string{"cleared": "x", "crit": "y", "minor": ""}, `invalid severity map: "cleared" is not a firing severity; "crit" is not an OpenNMS severity; "minor" has an empty value`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := newAlertTranslator(translationConfig{severityMap: tt.severityMap, resolveTimeout: time.Minute}, slog.New(slog.DiscardHandler))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("newAlertTranslator() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("newAlertTranslator() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}

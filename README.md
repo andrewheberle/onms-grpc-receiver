@@ -19,6 +19,7 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.12.1 --alert
 | --alert.annotations   | Annotations added to all alerts                            |                |
 | --alert.labels        | Labels added to all alerts                                 |                |
 | --alert.runbook-url   | Template for alerts without a runbook URL                  |                |
+| --alert.severity      | Map OpenNMS severities to alert severities (see below)     |                |
 | --alertmanager.scheme | Alertmanager scheme (http/https) when SRV records are used | http           |
 | --alertmanager.srv    | Alertmanager SRV Record                                    |                |
 | --alertmanager.url    | Alertmanager URL                                           |                |
@@ -195,6 +196,41 @@ changing an additional label turns every firing alert into a new alert, with the
 previous alert expiring after the resolve timeout (5 minutes by default) plus
 any [hold](#handling-opennms-restarts). Changes to additional annotations do
 not.
+
+### Severity Map
+
+By default the `severity` label is the lowercased name of the OpenNMS severity
+(`indeterminate`, `warning`, `minor`, `major`, `critical` or `cleared`). To
+match the severities your Alertmanager routes and inhibit rules expect, map
+OpenNMS severities to other values as follows:
+
+```sh
+onms-grpc-receiver spog --alert.severity critical=P1,major=P2,minor=P3
+```
+
+Or via an environment variable:
+
+```sh
+export ONMS_GRPC_ALERT_SEVERITY="critical=P1,major=P2,minor=P3"
+```
+
+Severity names are case-insensitive, and any severity not in the map keeps its
+default value. The runbook URL template sees the mapped value in
+`{{ .Labels.severity }}`.
+
+The receiver will not start if a mapping:
+
+* Is for a severity that is not `indeterminate`, `warning`, `minor`, `major` or
+  `critical`. `normal` alarms are never sent and `cleared` is used to end
+  alerts, so neither can be mapped.
+* Has an empty value.
+
+As `severity` is a label, an alarm changing between severities with different
+alert severities becomes a new alert, with the previous alert expiring after the
+resolve timeout plus any [hold](#handling-opennms-restarts). Mapping several
+severities to the same value (for example `major=page,critical=page`) means
+changes between them keep the same alert. Changing the map turns every affected
+firing alert into a new alert.
 
 ### Alarm link/URL
 

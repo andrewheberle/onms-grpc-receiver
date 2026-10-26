@@ -50,6 +50,14 @@ _Avoid_: Default label, standard label
 A label or annotation configured by the operator and added to every Alert; it may not reuse a Built-in name.
 _Avoid_: Custom label, static label, global label
 
+**Alert severity**:
+The severity an Alert carries, which is the name of its Alarm's severity unless a Severity map replaces it.
+_Avoid_: Priority, alert level
+
+**Severity map**:
+Operator configuration that replaces the Alert severity for chosen firing Alarm severities, so Alerts match the severity scheme of the operator's Alertmanager.
+_Avoid_: Severity mapping, severity override, severity alias
+
 **Alertmanager**:
 A Prometheus Alertmanager that receives Alerts; there may be several, listed directly or found from a DNS SRV record, and each one is sent every Alert.
 _Avoid_: AM, receiver, target

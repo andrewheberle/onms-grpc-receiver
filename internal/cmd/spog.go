@@ -48,6 +48,7 @@ type spogCommand struct {
 	alertLabels      map[string]string
 	alertAnnotations map[string]string
 	alertRunbookURL  string
+	alertSeverity    map[string]string
 
 	*koanfcommand.Command
 }
@@ -72,6 +73,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringToStringVar(&c.alertLabels, "alert.labels", map[string]string{}, "Labels added to all alerts")
 	cmd.Flags().StringToStringVar(&c.alertAnnotations, "alert.annotations", map[string]string{}, "Annotations added to all alerts")
 	cmd.Flags().StringVar(&c.alertRunbookURL, "alert.runbook-url", "", "Template for the runbook URL of alerts without one in their operator instructions")
+	cmd.Flags().StringToStringVar(&c.alertSeverity, "alert.severity", map[string]string{}, "Map OpenNMS severities to alert severities")
 	cmd.Flags().StringToStringVar(&c.urlMapping, "map.url", map[string]string{}, "Map instance ID's to URLs")
 	cmd.Flags().DurationVar(&c.resolveTimeout, "resolve.timeout", time.Minute*5, "Resolve timeout for alarms")
 	cmd.Flags().DurationVar(&c.resolveHold, "resolve.hold", 0, "Extra time firing alarm alerts stay active after the resolve timeout, to handle OpenNMS restarts")
@@ -113,6 +115,7 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		server.WithAlertLabels(c.alertLabels),
 		server.WithAlertAnnotations(c.alertAnnotations),
 		server.WithRunbookURLTemplate(c.alertRunbookURL),
+		server.WithSeverityMap(c.alertSeverity),
 	}
 
 	// set up alertmanager via url
