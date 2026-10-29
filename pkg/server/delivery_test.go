@@ -52,9 +52,9 @@ func newRecordingAlertmanager(t *testing.T, status int) *recordingAlertmanager {
 	return am
 }
 
-func testAlerts() []*models.PostableAlert {
-	return []*models.PostableAlert{{
-		Alert: models.Alert{Labels: models.LabelSet{"alertname": "test"}},
+func testAlerts() []*postableAlert {
+	return []*postableAlert{{
+		Labels: map[string]string{"alertname": "test"},
 	}}
 }
 

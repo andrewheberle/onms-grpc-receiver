@@ -14,8 +14,6 @@ import (
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/go-openapi/strfmt"
-	"github.com/prometheus/alertmanager/api/v2/models"
 )
 
 var (
@@ -262,7 +260,7 @@ func validateAlertFields(kind string, fields map[string]string, builtin []string
 // severity, and a firing alarm updated within the cleared alarm window is
 // also sent as a resolved alert for every other alert severity. Alertmanager
 // does not notify for resolved alerts that never fired. See ADR 0003.
-func (t *alertTranslator) alarm(ia instanceAlarm) ([]*models.PostableAlert, error) {
+func (t *alertTranslator) alarm(ia instanceAlarm) ([]*postableAlert, error) {
 	alarm := ia.alarm
 	cleared := alarm.GetSeverity() == uint32(pb.Severity_CLEARED)
 
@@ -337,16 +335,16 @@ func (t *alertTranslator) alarm(ia instanceAlarm) ([]*models.PostableAlert, erro
 	maps.Copy(annotations, t.extraAnnotations)
 
 	// add generator URL if mapping set
-	var generatorURL strfmt.URI
+	var generatorURL string
 	if baseUrl := inmap(ia.instanceID, t.urlMap); baseUrl != "" {
 		u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
 		if err != nil {
 			return nil, fmt.Errorf("problem creating generatorURL: %w", err)
 		}
-		generatorURL = strfmt.URI(u + fmt.Sprintf("?id=%d", alarm.GetId()))
+		generatorURL = u + fmt.Sprintf("?id=%d", alarm.GetId())
 	}
 
-	newAlert := func(severity string, endsAt time.Time) *models.PostableAlert {
+	newAlert := func(severity string, endsAt time.Time) *postableAlert {
 		labels := maps.Clone(labels)
 		labels["severity"] = severity
 		annotations := maps.Clone(annotations)
@@ -358,18 +356,16 @@ func (t *alertTranslator) alarm(ia instanceAlarm) ([]*models.PostableAlert, erro
 			}
 		}
 
-		return &models.PostableAlert{
-			Alert: models.Alert{
-				Labels:       labels,
-				GeneratorURL: generatorURL,
-			},
-			Annotations: annotations,
-			StartsAt:    strfmt.DateTime(firstEventTime),
-			EndsAt:      strfmt.DateTime(endsAt),
+		return &postableAlert{
+			Labels:       labels,
+			Annotations:  annotations,
+			GeneratorURL: generatorURL,
+			StartsAt:     firstEventTime,
+			EndsAt:       endsAt,
 		}
 	}
 
-	var alerts []*models.PostableAlert
+	var alerts []*postableAlert
 
 	// firing alerts end when the alarm was received plus the resolve timeout
 	// and hold
@@ -402,7 +398,7 @@ func (t *alertTranslator) clearedAlarmWindow() time.Duration {
 }
 
 // heartbeat returns the alert for a heartbeat received at now
-func (t *alertTranslator) heartbeat(instanceName string, now time.Time) *models.PostableAlert {
+func (t *alertTranslator) heartbeat(instanceName string, now time.Time) *postableAlert {
 	labels := map[string]string{
 		"alertname":     "OpenNMSHeartbeat",
 		"instance_name": instanceName,
@@ -415,13 +411,11 @@ func (t *alertTranslator) heartbeat(instanceName string, now time.Time) *models.
 		annotations["runbook_url"] = u
 	}
 
-	return &models.PostableAlert{
-		Alert: models.Alert{
-			Labels: labels,
-		},
+	return &postableAlert{
+		Labels:      labels,
 		Annotations: annotations,
-		StartsAt:    strfmt.DateTime(now),
-		EndsAt:      strfmt.DateTime(now.Add(t.resolveTimeout)),
+		StartsAt:    now,
+		EndsAt:      now.Add(t.resolveTimeout),
 	}
 }
 

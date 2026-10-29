@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -123,7 +122,7 @@ func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string
 // send posts alerts to every Alertmanager currently known. An error is
 // returned only if the Alertmanagers could not be found or the alerts could
 // not be encoded; failures to send to an Alertmanager are logged and counted.
-func (d *alertDelivery) send(alerts []*models.PostableAlert) error {
+func (d *alertDelivery) send(alerts []*postableAlert) error {
 	if len(alerts) == 0 {
 		return nil
 	}
