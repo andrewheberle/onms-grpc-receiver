@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.13.0...v0.13.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/prometheus/alertmanager to v0.34.2 ([#162](https://github.com/andrewheberle/onms-grpc-receiver/issues/162)) ([49c2e9f](https://github.com/andrewheberle/onms-grpc-receiver/commit/49c2e9fb0d96730ab8d03d22414614750eeaea50))
+* **deps:** update module google.golang.org/grpc to v1.85.0 ([#160](https://github.com/andrewheberle/onms-grpc-receiver/issues/160)) ([b440077](https://github.com/andrewheberle/onms-grpc-receiver/commit/b440077ccf142c9d267ecd386f72f437cf1a7719))
+
 ## [0.13.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.12.1...v0.13.0) (2026-10-26)
 
 
