@@ -9,7 +9,7 @@ require (
 	github.com/cloudflare/certinel v0.4.1
 	github.com/go-openapi/strfmt v0.27.4
 	github.com/oklog/run v1.2.0
-	github.com/prometheus/alertmanager v0.34.1
+	github.com/prometheus/alertmanager v0.34.2
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	google.golang.org/grpc v1.85.0
