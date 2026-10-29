@@ -6,7 +6,6 @@ import (
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -148,14 +147,14 @@ func (p *alertPipeline) heartbeat(hb *pb.HeartBeat, now time.Time) {
 	p.logger.Debug("adding message to list", "message", alert)
 
 	// send to alertmanager at the end
-	if err := p.delivery.send([]*models.PostableAlert{alert}); err != nil {
+	if err := p.delivery.send([]*postableAlert{alert}); err != nil {
 		p.logger.Error("error during send", "error", err)
 	}
 }
 
 // flush translates a batch of alarms and sends the resulting alerts
 func (p *alertPipeline) flush(alarms []instanceAlarm) {
-	list := make([]*models.PostableAlert, 0)
+	list := make([]*postableAlert, 0)
 	for _, ia := range alarms {
 		alarm := ia.alarm
 		id := ia.instanceID

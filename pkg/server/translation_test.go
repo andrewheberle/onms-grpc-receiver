@@ -9,7 +9,6 @@ import (
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/prometheus/alertmanager/api/v2/models"
 )
 
 // newTestTranslator returns a translator for cfg, with a resolve timeout of 5
@@ -31,7 +30,7 @@ func newTestTranslator(t *testing.T, cfg translationConfig) *alertTranslator {
 
 // firstAlarmAlert returns the first alert for an alarm, which is the alarm's
 // own alert if it is firing, or nil if it is not sent
-func firstAlarmAlert(tr *alertTranslator, ia instanceAlarm) (*models.PostableAlert, error) {
+func firstAlarmAlert(tr *alertTranslator, ia instanceAlarm) (*postableAlert, error) {
 	alerts, err := tr.alarm(ia)
 	if err != nil || len(alerts) == 0 {
 		return nil, err
@@ -166,7 +165,7 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alarm() error = %v", err)
 	}
-	if endsAt, want := time.Time(firing.EndsAt), now.Add(time.Minute*3); !endsAt.Equal(want) {
+	if endsAt, want := firing.EndsAt, now.Add(time.Minute*3); !endsAt.Equal(want) {
 		t.Errorf("firing alert EndsAt = %v, want %v", endsAt, want)
 	}
 
@@ -180,7 +179,7 @@ func TestAlertTranslatorAlarmEndsAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alarm() error = %v", err)
 	}
-	if endsAt, want := time.Time(cleared.EndsAt), time.UnixMilli(int64(ms(-time.Second))); !endsAt.Equal(want) {
+	if endsAt, want := cleared.EndsAt, time.UnixMilli(int64(ms(-time.Second))); !endsAt.Equal(want) {
 		t.Errorf("cleared alert EndsAt = %v, want last update time %v", endsAt, want)
 	}
 }
@@ -215,7 +214,7 @@ func TestAlertTranslatorResolveHold(t *testing.T) {
 			if err != nil {
 				t.Fatalf("alarm() error = %v", err)
 			}
-			if endsAt := time.Time(firing.EndsAt); !endsAt.Equal(tt.wantFiring) {
+			if endsAt := firing.EndsAt; !endsAt.Equal(tt.wantFiring) {
 				t.Errorf("firing alert EndsAt = %v, want %v", endsAt, tt.wantFiring)
 			}
 
@@ -229,11 +228,11 @@ func TestAlertTranslatorResolveHold(t *testing.T) {
 			if err != nil {
 				t.Fatalf("alarm() error = %v", err)
 			}
-			if endsAt := time.Time(cleared.EndsAt); !endsAt.Equal(tt.wantCleared) {
+			if endsAt := cleared.EndsAt; !endsAt.Equal(tt.wantCleared) {
 				t.Errorf("cleared alert EndsAt = %v, want %v", endsAt, tt.wantCleared)
 			}
 
-			if endsAt := time.Time(tr.heartbeat("OpenNMS", now).EndsAt); !endsAt.Equal(tt.wantHeartbeat) {
+			if endsAt := tr.heartbeat("OpenNMS", now).EndsAt; !endsAt.Equal(tt.wantHeartbeat) {
 				t.Errorf("heartbeat alert EndsAt = %v, want %v", endsAt, tt.wantHeartbeat)
 			}
 		})
@@ -341,7 +340,7 @@ func TestAlertTranslatorAlarmGeneratorURL(t *testing.T) {
 			if err != nil {
 				t.Fatalf("alarm() error = %v", err)
 			}
-			if string(got.GeneratorURL) != tt.want {
+			if got.GeneratorURL != tt.want {
 				t.Errorf("GeneratorURL = %q, want %q", got.GeneratorURL, tt.want)
 			}
 		})
@@ -617,10 +616,10 @@ func TestAlertTranslatorHeartbeat(t *testing.T) {
 	if !reflect.DeepEqual(map[string]string(got.Annotations), map[string]string{"dashboard": "https://grafana/d/onms"}) {
 		t.Errorf("annotations = %v, want only dashboard", got.Annotations)
 	}
-	if startsAt := time.Time(got.StartsAt); !startsAt.Equal(now) {
+	if startsAt := got.StartsAt; !startsAt.Equal(now) {
 		t.Errorf("StartsAt = %v, want %v", startsAt, now)
 	}
-	if endsAt := time.Time(got.EndsAt); !endsAt.Equal(now.Add(time.Minute * 3)) {
+	if endsAt := got.EndsAt; !endsAt.Equal(now.Add(time.Minute * 3)) {
 		t.Errorf("EndsAt = %v, want %v", endsAt, now.Add(time.Minute*3))
 	}
 }
@@ -917,7 +916,7 @@ func TestAlertTranslatorAlarmSeverityChange(t *testing.T) {
 					t.Errorf("alert %d runbook_url = %q, want %q", i, runbook, want)
 				}
 
-				endsAt := time.Time(a.EndsAt)
+				endsAt := a.EndsAt
 				if endsAt.After(now) {
 					if i != 0 {
 						t.Errorf("firing alert %q is alert %d, want 0", severity, i)
