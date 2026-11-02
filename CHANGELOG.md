@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.13.1...v0.13.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** update cgr.dev/chainguard/static:latest docker digest to fc42af3 ([#164](https://github.com/andrewheberle/onms-grpc-receiver/issues/164)) ([458612d](https://github.com/andrewheberle/onms-grpc-receiver/commit/458612d0ce47f638e872ccafefe01e2b0d6bac71))
+
 ## [0.13.1](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.13.0...v0.13.1) (2026-10-29)
 
 
