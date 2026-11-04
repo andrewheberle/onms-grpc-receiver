@@ -3,12 +3,15 @@ package cmd
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/andrewheberle/onms-grpc-receiver/pkg/server"
 	"github.com/andrewheberle/simplecommand/koanfcommand"
@@ -142,9 +145,17 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		opts = append(opts, server.WithVerbose())
 	}
 
+	// check the options of the command and of the server together, so every
+	// problem is reported at once
+	problems := []error{checkMetricsPath(c.metricsPath)}
+	if c.maxRecvMsgSize <= 0 {
+		problems = append(problems, fmt.Errorf("invalid --grpc.max-recv-size %d: must be greater than zero", c.maxRecvMsgSize))
+	}
+
 	// set up server
 	srv, err := server.NewServiceSyncServer(opts...)
-	if err != nil {
+	problems = append(problems, err)
+	if err := errors.Join(problems...); err != nil {
 		return err
 	}
 	c.srv = srv
@@ -152,6 +163,29 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	c.logger.Debug("completed PreRun", "command", this.CobraCommand.Name())
 
 	return nil
+}
+
+// healthPath is the path of the health check served with metrics
+const healthPath = "/-/healthy"
+
+// checkMetricsPath returns a problem with p as the path metrics are served
+// on, which must be a plain path that does not clash with healthPath
+func checkMetricsPath(p string) error {
+	var problem string
+	switch {
+	case !strings.HasPrefix(p, "/"):
+		problem = `must start with "/"`
+	case strings.ContainsFunc(p, unicode.IsSpace):
+		problem = "must not contain whitespace"
+	case strings.ContainsAny(p, "{}"):
+		problem = `must not contain "{" or "}"`
+	case p == healthPath:
+		problem = "clashes with the health check"
+	default:
+		return nil
+	}
+
+	return fmt.Errorf("invalid --metrics.path %q: %s", p, problem)
 }
 
 func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
@@ -220,7 +254,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	// set up metrics
 	if c.metricsAddress != "" {
 		mux := http.NewServeMux()
-		mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc(healthPath, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("Healthy"))
 		})

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -49,8 +50,9 @@ type alertPipeline struct {
 // newAlertPipeline returns an alertPipeline that translates alarms and
 // heartbeats with translator and sends them with sender, and registers its
 // metrics with reg. Alarms are flushed once a batch reaches flushThreshold or
-// at each flushInterval.
-func newAlertPipeline(translator *alertTranslator, sender alertSender, flushThreshold int, flushInterval time.Duration, logAlarms bool, logger *slog.Logger, reg prometheus.Registerer) *alertPipeline {
+// at each flushInterval. An error is returned if the flush settings are
+// invalid or metrics could not be registered.
+func newAlertPipeline(translator *alertTranslator, sender alertSender, flushThreshold int, flushInterval time.Duration, logAlarms bool, logger *slog.Logger, reg prometheus.Registerer) (*alertPipeline, error) {
 	p := &alertPipeline{
 		translator: translator,
 		sender:     sender,
@@ -77,10 +79,13 @@ func newAlertPipeline(translator *alertTranslator, sender alertSender, flushThre
 		},
 			[]string{"instance_id"}),
 	}
-	reg.MustRegister(p.alarmTotal, p.alarmCount, p.alarmLastSnapshot, p.heartbeatTotal)
-	p.batcher = newAlarmBatcher(p.flush, alarmQueueSize, flushThreshold, flushInterval, logger, reg)
+	batcher, err := newAlarmBatcher(p.flush, alarmQueueSize, flushThreshold, flushInterval, logger, reg)
+	if err := errors.Join(err, register(reg, p.alarmTotal, p.alarmCount, p.alarmLastSnapshot, p.heartbeatTotal)); err != nil {
+		return nil, err
+	}
+	p.batcher = batcher
 
-	return p
+	return p, nil
 }
 
 // run flushes batched alarms until ctx is cancelled, when it stops accepting
@@ -207,13 +212,7 @@ func (p *alertPipeline) flush(ctx context.Context, alarms []instanceAlarm) {
 			)
 		}
 
-		alerts, err := p.translator.alarm(ia)
-		if err != nil {
-			p.logger.Error("problem creating alert", "error", err)
-			continue
-		}
-
-		list = append(list, alerts...)
+		list = append(list, p.translator.alarm(ia)...)
 	}
 
 	// send to alertmanager at the end

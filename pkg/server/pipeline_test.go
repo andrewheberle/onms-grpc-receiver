@@ -45,7 +45,7 @@ func newTestPipeline(t *testing.T, sender alertSender, cfg translationConfig) (*
 
 	reg := prometheus.NewRegistry()
 
-	return newAlertPipeline(newTestTranslator(t, cfg), sender, 1000, time.Hour, false, slog.New(slog.DiscardHandler), reg), reg
+	return must(newAlertPipeline(newTestTranslator(t, cfg), sender, 1000, time.Hour, false, slog.New(slog.DiscardHandler), reg))(t), reg
 }
 
 // runPipeline runs p while feed is called, then stops it so that every queued

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -76,6 +77,10 @@ type alertTranslator struct {
 	// every distinct alert severity of a firing alarm
 	alertSeverities []string
 
+	// the URL of the alarm detail page of each Horizon instance in urlMap,
+	// keyed by instance ID, which the alarm ID is added to
+	alarmLinks map[string]string
+
 	logger *slog.Logger
 }
 
@@ -84,36 +89,38 @@ type runbookData struct {
 	Labels map[string]string
 }
 
-// newAlertTranslator returns a translator for the given configuration. An
-// error is returned if any extra label or annotation clashes with a built-in
-// one, has an invalid name or has an empty value, if the runbook URL template
-// or severity map is invalid, if the resolve timeout is not greater than zero,
-// or if the resolve hold is negative.
+// newAlertTranslator returns a translator for the given configuration. The
+// error returned joins every problem: an extra label or annotation that
+// clashes with a built-in one, has an invalid name or has an empty value, an
+// invalid runbook URL template, severity map or URL map, a resolve timeout
+// that is not greater than zero, or a negative resolve hold.
 func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTranslator, error) {
+	var problems []error
+
 	// a resolve timeout of zero or less would resolve alerts as they are sent
 	if cfg.resolveTimeout <= 0 {
-		return nil, fmt.Errorf("invalid resolve timeout %s: must be greater than zero", cfg.resolveTimeout)
+		problems = append(problems, fmt.Errorf("invalid resolve timeout %s: must be greater than zero", cfg.resolveTimeout))
 	}
 
 	if cfg.resolveHold < 0 {
-		return nil, fmt.Errorf("invalid resolve hold %s: must not be negative", cfg.resolveHold)
+		problems = append(problems, fmt.Errorf("invalid resolve hold %s: must not be negative", cfg.resolveHold))
 	}
 
-	if err := validateAlertFields("label", cfg.extraLabels, builtinLabels); err != nil {
-		return nil, err
-	}
-
-	if err := validateAlertFields("annotation", cfg.extraAnnotations, builtinAnnotations); err != nil {
-		return nil, err
-	}
+	problems = append(problems,
+		validateAlertFields("label", cfg.extraLabels, builtinLabels),
+		validateAlertFields("annotation", cfg.extraAnnotations, builtinAnnotations),
+	)
 
 	tmpl, err := parseRunbookURLTemplate(cfg.runbookURLTemplate)
-	if err != nil {
-		return nil, err
-	}
+	problems = append(problems, err)
 
 	severities, err := parseSeverityMap(cfg.severityMap)
-	if err != nil {
+	problems = append(problems, err)
+
+	alarmLinks, err := parseURLMap(cfg.urlMap)
+	problems = append(problems, err)
+
+	if err := errors.Join(problems...); err != nil {
 		return nil, err
 	}
 
@@ -121,6 +128,7 @@ func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTrans
 		translationConfig: cfg,
 		runbookTemplate:   tmpl,
 		severities:        severities,
+		alarmLinks:        alarmLinks,
 		logger:            logger,
 	}
 
@@ -131,6 +139,40 @@ func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTrans
 	}
 
 	return t, nil
+}
+
+// parseURLMap checks a map of Horizon instance IDs to base URLs, returning
+// the URL of the alarm detail page of each instance, or an error joining
+// every problem found. A URL with a query cannot be used, as the alarm ID is
+// added as the query.
+func parseURLMap(m map[string]string) (map[string]string, error) {
+	links := make(map[string]string, len(m))
+
+	var problems []error
+	for _, id := range slices.Sorted(maps.Keys(m)) {
+		if id == "" {
+			problems = append(problems, errors.New("invalid URL map: an instance ID is empty"))
+			continue
+		}
+
+		if err := checkHTTPURL(fmt.Sprintf("URL for instance %q in URL map", id), m[id], false); err != nil {
+			problems = append(problems, err)
+			continue
+		}
+
+		link, err := url.JoinPath(m[id], "/alarm/detail.htm")
+		if err != nil {
+			problems = append(problems, fmt.Errorf("invalid URL for instance %q in URL map: %w", id, err))
+			continue
+		}
+		links[id] = link
+	}
+
+	if err := errors.Join(problems...); err != nil {
+		return nil, err
+	}
+
+	return links, nil
 }
 
 // firingSeverities are the OpenNMS severities of alarms that fire an alert
@@ -260,13 +302,13 @@ func validateAlertFields(kind string, fields map[string]string, builtin []string
 // severity, and a firing alarm updated within the cleared alarm window is
 // also sent as a resolved alert for every other alert severity. Alertmanager
 // does not notify for resolved alerts that never fired. See ADR 0003.
-func (t *alertTranslator) alarm(ia instanceAlarm) ([]*postableAlert, error) {
+func (t *alertTranslator) alarm(ia instanceAlarm) []*postableAlert {
 	alarm := ia.alarm
 	cleared := alarm.GetSeverity() == uint32(pb.Severity_CLEARED)
 
 	// ignore Normal severity alarms
 	if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
-		return nil, nil
+		return nil
 	}
 
 	firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
@@ -282,7 +324,7 @@ func (t *alertTranslator) alarm(ia instanceAlarm) ([]*postableAlert, error) {
 	// active in alertmanager.
 	recent := !lastUpdateTime.Before(ia.now.Add(-t.clearedAlarmWindow()))
 	if cleared && !recent {
-		return nil, nil
+		return nil
 	}
 
 	// add basics
@@ -334,14 +376,10 @@ func (t *alertTranslator) alarm(ia instanceAlarm) ([]*postableAlert, error) {
 	maps.Copy(labels, t.extraLabels)
 	maps.Copy(annotations, t.extraAnnotations)
 
-	// add generator URL if mapping set
+	// link to the alarm if the instance has a URL
 	var generatorURL string
-	if baseUrl := inmap(ia.instanceID, t.urlMap); baseUrl != "" {
-		u, err := url.JoinPath(baseUrl, "/alarm/detail.htm")
-		if err != nil {
-			return nil, fmt.Errorf("problem creating generatorURL: %w", err)
-		}
-		generatorURL = u + fmt.Sprintf("?id=%d", alarm.GetId())
+	if link, ok := t.alarmLinks[ia.instanceID]; ok {
+		generatorURL = link + fmt.Sprintf("?id=%d", alarm.GetId())
 	}
 
 	newAlert := func(severity string, endsAt time.Time) *postableAlert {
@@ -373,7 +411,7 @@ func (t *alertTranslator) alarm(ia instanceAlarm) ([]*postableAlert, error) {
 	if !cleared {
 		alerts = append(alerts, newAlert(severity, ia.now.Add(t.resolveTimeout+t.resolveHold)))
 		if !recent {
-			return alerts, nil
+			return alerts
 		}
 	}
 
@@ -385,7 +423,7 @@ func (t *alertTranslator) alarm(ia instanceAlarm) ([]*postableAlert, error) {
 		alerts = append(alerts, newAlert(s, lastUpdateTime))
 	}
 
-	return alerts, nil
+	return alerts
 }
 
 // clearedAlarmWindow is how long after its last update a cleared alarm is
@@ -472,12 +510,4 @@ func trimURL(u string) string {
 		}
 		u = trimmed
 	}
-}
-
-func inmap(k string, m map[string]string) string {
-	if v, ok := m[k]; ok {
-		return v
-	}
-
-	return ""
 }

@@ -1,10 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,11 +18,26 @@ import (
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+// must returns a function that returns v, failing the test if err is not
+// nil, for constructors that return an error
+func must[T any](v T, err error) func(t *testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		return v
+	}
+}
 
 // fakeAlertmanager returns the URL of an Alertmanager that stores the alerts
 // it was last sent in got
@@ -160,6 +177,105 @@ func TestNewServiceSyncServerRejectsBuiltinNames(t *testing.T) {
 			_, err := NewServiceSyncServer(tt.opt)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("NewServiceSyncServer() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestNewServiceSyncServerRejectsConfig checks each invalid setting stops the
+// server being created, rather than failing later
+func TestNewServiceSyncServerRejectsConfig(t *testing.T) {
+	goRegistry := func() *prometheus.Registry {
+		reg := prometheus.NewRegistry()
+		reg.MustRegister(collectors.NewGoCollector())
+		return reg
+	}
+
+	tests := []struct {
+		name    string
+		opts    []ServiceSyncServerOption
+		wantErr string
+	}{
+		{"nil logger", []ServiceSyncServerOption{WithLogger(nil)}, "invalid logger: must not be nil"},
+		{"nil registry", []ServiceSyncServerOption{WithRegistry(nil)}, "invalid registry: must not be nil"},
+		{"registry with go collector", []ServiceSyncServerOption{WithRegistry(goRegistry())}, "registering metrics"},
+		{"empty alertmanager URLs", []ServiceSyncServerOption{WithAlertmanagerUrl([]string{})}, "invalid alertmanager URLs: none given"},
+		{"alertmanager URL without scheme", []ServiceSyncServerOption{WithAlertmanagerUrl([]string{"am:9093"})}, `invalid alertmanager URL "am:9093": must be http or https`},
+		{"alertmanager URL listed twice", []ServiceSyncServerOption{WithAlertmanagerUrl([]string{"http://am:9093", "http://am:9093/"})}, `invalid alertmanager URL "http://am:9093/": listed more than once`},
+		{"alertmanager scheme", []ServiceSyncServerOption{WithAlertManagerSrv("htps", "_alertmanager._tcp.example.com")}, `invalid alertmanager scheme "htps": must be http or https`},
+		{"empty SRV record", []ServiceSyncServerOption{WithAlertManagerSrv("http", "")}, "invalid alertmanager SRV record: must not be empty"},
+		{"negative SRV cache TTL", []ServiceSyncServerOption{WithSRVCacheTTL(-time.Second)}, "invalid SRV cache TTL -1s: must not be negative"},
+		{"invalid header", []ServiceSyncServerOption{WithHeaders(map[string]string{"X Scope": "noc"})}, `invalid header "X Scope"`},
+		{"reserved header", []ServiceSyncServerOption{WithHeaders(map[string]string{"Host": "am"})}, `invalid header "Host": Host cannot be set`},
+		{"URL map with query", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon:8980/opennms/?x=1"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon:8980/opennms/?x=1": must not have a query`},
+		{"unparseable URL map", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon 1:8980/opennms/"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon 1:8980/opennms/": invalid character " " in host name`},
+		{"URL map with empty instance ID", []ServiceSyncServerOption{WithURLMapping(map[string]string{"": "http://horizon:8980/opennms/"})}, "invalid URL map: an instance ID is empty"},
+		{"flush threshold", []ServiceSyncServerOption{WithFlushThreshold(0)}, "invalid flush threshold 0: must be at least 1"},
+		{"flush interval", []ServiceSyncServerOption{WithFlushInterval(0)}, "invalid flush interval 0s: must be greater than zero"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewServiceSyncServer(tt.opts...)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("NewServiceSyncServer() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestNewServiceSyncServerReportsEveryProblem checks every problem with the
+// configuration is reported at once, from each part of the server
+func TestNewServiceSyncServerReportsEveryProblem(t *testing.T) {
+	_, err := NewServiceSyncServer(
+		WithAlertLabels(map[string]string{"severity": "critical"}),
+		WithResolveHold(-time.Minute),
+		WithURLMapping(map[string]string{"6f8a7c1e-uuid": "horizon:8980"}),
+		WithAlertmanagerUrl([]string{"am:9093", "ftp://am:9093"}),
+		WithHeaders(map[string]string{"Content-Type": "text/plain"}),
+		WithFlushInterval(-time.Second),
+	)
+	if err == nil {
+		t.Fatal("NewServiceSyncServer() error = nil, want every problem")
+	}
+
+	for _, want := range []string{
+		`"severity" clashes with a built-in label`,
+		"invalid resolve hold -1m0s",
+		`invalid URL for instance "6f8a7c1e-uuid" in URL map`,
+		`invalid alertmanager URL "am:9093"`,
+		`invalid alertmanager URL "ftp://am:9093"`,
+		`invalid header "Content-Type"`,
+		"invalid flush interval -1s",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("NewServiceSyncServer() error = %v, want containing %q", err, want)
+		}
+	}
+}
+
+// TestNewServiceSyncServerLogOnly checks a warning is logged at startup when
+// no Alertmanager is configured, as alarms are then only logged
+func TestNewServiceSyncServerLogOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     []ServiceSyncServerOption
+		wantWarn bool
+	}{
+		{"no alertmanager", nil, true},
+		{"alertmanager URL", []ServiceSyncServerOption{WithAlertmanagerUrl([]string{"http://am:9093"})}, false},
+		{"alertmanager SRV record", []ServiceSyncServerOption{WithAlertManagerSrv("http", "_alertmanager._tcp.example.com")}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+			if _, err := NewServiceSyncServer(append(tt.opts, WithLogger(logger))...); err != nil {
+				t.Fatalf("NewServiceSyncServer() error = %v", err)
+			}
+
+			if got := strings.Contains(logs.String(), "no Alertmanager configured"); got != tt.wantWarn {
+				t.Errorf("warned = %v, want %v, logs %q", got, tt.wantWarn, logs.String())
 			}
 		})
 	}

@@ -24,6 +24,20 @@ func TestSpogRejectsBuiltinNames(t *testing.T) {
 		{"severity map env var", nil, map[string]string{"ONMS_GRPC_ALERT_SEVERITY": "major=P2,crit=P1"}, `invalid severity map: "crit" is not an OpenNMS severity`},
 		{"negative resolve hold flag", []string{"--resolve.hold", "-1m"}, nil, "invalid resolve hold -1m0s"},
 		{"negative resolve hold env var", nil, map[string]string{"ONMS_GRPC_RESOLVE_HOLD": "-5m"}, "invalid resolve hold -5m0s"},
+		{"metrics path flag", []string{"--metrics.path", "metrics"}, nil, `invalid --metrics.path "metrics": must start with "/"`},
+		{"metrics path env var", nil, map[string]string{"ONMS_GRPC_METRICS_PATH": "/-/healthy"}, `invalid --metrics.path "/-/healthy": clashes with the health check`},
+		{"metrics path with wildcard", []string{"--metrics.path", "/{metrics}"}, nil, `invalid --metrics.path "/{metrics}": must not contain "{" or "}"`},
+		{"metrics path with space", []string{"--metrics.path", "GET /metrics"}, nil, `invalid --metrics.path "GET /metrics": must start with "/"`},
+		{"max recv size flag", []string{"--grpc.max-recv-size", "0"}, nil, "invalid --grpc.max-recv-size 0: must be greater than zero"},
+		{"max recv size env var", nil, map[string]string{"ONMS_GRPC_GRPC_MAX_RECV_SIZE": "-1"}, "invalid --grpc.max-recv-size -1: must be greater than zero"},
+		{"headers flag", []string{"--headers", "Host=am"}, nil, `invalid header "Host": Host cannot be set`},
+		{"headers env var", nil, map[string]string{"ONMS_GRPC_HEADERS": "X Scope=noc"}, `invalid header "X Scope": not a valid header name`},
+		{"srv ttl flag", []string{"--alertmanager.srv", "_alertmanager._tcp.example.com", "--srv.ttl", "-30s"}, nil, "invalid SRV cache TTL -30s: must not be negative"},
+		{"srv ttl env var", nil, map[string]string{"ONMS_GRPC_SRV_TTL": "-1m"}, "invalid SRV cache TTL -1m0s: must not be negative"},
+		{"alertmanager url flag", []string{"--alertmanager.url", "localhost:9093"}, nil, `invalid alertmanager URL "localhost:9093": must be http or https`},
+		{"alertmanager scheme flag", []string{"--alertmanager.srv", "_alertmanager._tcp.example.com", "--alertmanager.scheme", "htps"}, nil, `invalid alertmanager scheme "htps"`},
+		{"map url env var", nil, map[string]string{"ONMS_GRPC_MAP_URL": "6f8a7c1e-uuid=http://horizon:8980/opennms/#alarms"}, "must not have a fragment"},
+		{"every problem at once", []string{"--metrics.path", "metrics", "--resolve.hold", "-1m"}, nil, `invalid --metrics.path "metrics": must start with "/"` + "\ninvalid resolve hold -1m0s"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -25,8 +25,8 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.13.2 --alert
 | --alertmanager.url    | Alertmanager URL                                           |                |
 | --cert                | TLS Certificate                                            |                |
 | --debug               | Enable debug logging                                       |                |
-| --grpc.max-recv-size  | Maximum gRPC message size in bytes that can be received    | 67108864       |
-| --headers             | Custom headers                                             |                |
+| --grpc.max-recv-size  | Max gRPC message size in bytes (must be greater than zero) | 67108864       |
+| --headers             | Headers added to requests to Alertmanager (see below)      |                |
 | --key                 | TLS Key                                                    |                |
 | --map.url             | Map Horizon instance ID's to URLs                          |                |
 | --metrics.address     | Metrics listen address                                     |                |
@@ -35,7 +35,10 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.13.2 --alert
 | --verbose             | Log all messages                                           |                |
 | --resolve.timeout     | Resolve timeout for alarms (must be greater than zero)     | 5m             |
 | --resolve.hold        | Extra time firing alarm alerts stay active (see below)     | 0s             |
-| --srv.ttl             | TTL for cached SRV lookups                                 | 30s            |
+| --srv.ttl             | TTL for cached SRV lookups (`0` disables caching)          | 30s            |
+
+Options are checked when the receiver starts, and it will not start if any are
+invalid, listing every problem found so they can all be fixed at once.
 
 All command line options may also be provided as environment variables with the prefix of `ONMS_GRPC` as follows:
 
@@ -71,8 +74,33 @@ Or you may use SRV record lookups using the `--alertmanager.srv` and optionally
 onms-grpc-receiver spog --alertmanager.srv _http.alertmanager --alertmanager.scheme http
 ```
 
-The above options are mutually exclusive, in addition only basic validation of
-provided URLs is done, not that any Alertmanager is reachable on startup.
+The above options are mutually exclusive. Only the options are checked on
+startup, not that any Alertmanager is reachable. The receiver will not start
+if:
+
+* An Alertmanager URL is not an `http` or `https` URL with a host, such as
+  `am:9093` without a scheme, or has a fragment (`#...`). A path prefix,
+  credentials (`http://user:password@am:9093`) and a query string are allowed,
+  and passwords are hidden in any error.
+* The same Alertmanager URL is listed more than once (`http://am:9093` and
+  `http://am:9093/` are the same).
+* `--alertmanager.scheme` is not `http` or `https`.
+* `--srv.ttl` is negative.
+
+If neither option is set, alarms are only logged and nothing is sent, and a
+warning is logged on startup.
+
+Headers may be added to every request to Alertmanager, such as for
+authentication or a multi-tenant proxy:
+
+```sh
+onms-grpc-receiver spog --alertmanager.url http://am:9093 --headers X-Scope-OrgID=noc
+```
+
+The receiver will not start if a header name is not a valid HTTP header name, a
+value has a control character such as a newline, or the header is `Host`,
+`Content-Type` or `Content-Length`, which would be ignored or break the request.
+Header values are never included in errors.
 
 ### Delivery and Retries
 
@@ -280,6 +308,10 @@ onms-grpc-receiver spog --map.url "uuid-of-horizon-instance=http://horizon:8980/
 
 Based on the above an alert from `uuid-of-horizon-instance` with an alert ID `25` would result in a URL of `http://horizon:8980/opennms/alarm/detail.htm?id=25`
 
+The receiver will not start if an instance ID is empty, or a URL is not an
+`http` or `https` URL with a host, or has a query string or fragment, as the
+alarm ID is added as the query string.
+
 ### Handling OpenNMS restarts
 
 OpenNMS sends a snapshot of every alarm every 2 minutes (set by the
@@ -325,6 +357,9 @@ snapshot that included it.
 Prometheus metrics are exposed on the `/metrics` path (by default) when the `--metrics.address` flag is provided.
 
 Enabling metrics also enables a health check endpoint at `/-/healthy` that responds with `200 OK`.
+
+The receiver will not start if `--metrics.path` does not start with `/`,
+contains whitespace, `{` or `}`, or is `/-/healthy`.
 
 ### Alarm snapshots
 
