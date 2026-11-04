@@ -22,6 +22,10 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// defaultAddress is the default gRPC listen address of the receiver, which
+// healthcheck also checks by default
+const defaultAddress = "localhost:8080"
+
 type spogCommand struct {
 	logger *slog.Logger
 
@@ -65,7 +69,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.Flags().StringVar(&c.cert, "cert", "", "TLS Certificate")
 	cmd.Flags().StringVar(&c.key, "key", "", "TLS Key")
 	cmd.MarkFlagsRequiredTogether("cert", "key")
-	cmd.Flags().StringVar(&c.listenAddress, "address", "localhost:8080", "Service gRPC listen address")
+	cmd.Flags().StringVar(&c.listenAddress, "address", defaultAddress, "Service gRPC listen address")
 	cmd.Flags().StringVar(&c.metricsAddress, "metrics.address", "", "Metrics listen address")
 	cmd.Flags().StringVar(&c.metricsPath, "metrics.path", "/metrics", "Metrics path")
 	cmd.Flags().StringSliceVar(&c.alertManagers, "alertmanager.url", []string{}, "Alertmanager URL")

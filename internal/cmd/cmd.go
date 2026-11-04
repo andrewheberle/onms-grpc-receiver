@@ -46,12 +46,26 @@ OpenNMS Horizon instances may be handled as all Heartbeat and AlarmUpdate messag
 	spog.EnvKeyReplacer = strings.NewReplacer("-", "_", ".", "_")
 	spog.EnvPrefix = "onms_grpc"
 
+	// the health check reads the same environment variables as spog, so in
+	// the container it checks the receiver it runs
+	healthcheck := &healthcheckCommand{
+		Command: koanfcommand.New(
+			"healthcheck",
+			"Check whether a receiver is ready",
+			simplecommand.WithLong(`Check whether a receiver is ready to receive alarm updates and heartbeats, using the gRPC health service on its gRPC listener.
+Exits with a status of 0 when it is serving, or 1 otherwise. Its options may be set from the same environment variables as those of spog, so it is used without arguments as the HEALTHCHECK of the container image.`),
+		),
+	}
+	healthcheck.EnvKeyReplacer = strings.NewReplacer("-", "_", ".", "_")
+	healthcheck.EnvPrefix = "onms_grpc"
+
 	rootCmd := &rootCommand{
 		simplecommand.New(
 			"onms-grpc-receiver",
 			"A gRPC receiver for OpenNMS",
 			simplecommand.WithSubCommands(
 				spog,
+				healthcheck,
 				&versionCommand{
 					simplecommand.New("version", "Print version information"),
 				},

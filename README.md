@@ -432,6 +432,48 @@ readinessProbe:
   periodSeconds: 5
 ```
 
+### Docker
+
+The container image has a `HEALTHCHECK` that runs the `healthcheck` command,
+which asks the gRPC health service of the receiver whether it is serving. It
+exits with a status of 0 and prints `SERVING` when it is, and otherwise exits
+with a status of 1 and prints why. The check runs every 30 seconds, and the
+container is marked unhealthy after 3 failed checks in a row, not counting
+those in the first 15 seconds.
+
+This lets Docker Compose wait for the receiver before starting services that
+depend on it, and Docker Swarm replace an unhealthy receiver:
+
+```yaml
+services:
+  onms-grpc-receiver:
+    image: ghcr.io/andrewheberle/onms-grpc-receiver:v0.13.2 # x-release-please-version
+    command: --alertmanager.url http://alertmanager:9093
+  app:
+    image: example/app
+    depends_on:
+      onms-grpc-receiver:
+        condition: service_healthy
+```
+
+The `healthcheck` command reads the same `ONMS_GRPC_` environment variables as
+`spog`, so it checks the receiver the container runs without any arguments:
+
+| Flag      | Decription                                                       | Default        |
+|-----------|------------------------------------------------------------------|----------------|
+| --address | Service gRPC listen address of the receiver to check             | localhost:8080 |
+| --cert    | Connect with TLS, without verifying the certificate, when set    |                |
+| --timeout | How long the check may take                                      | 3s             |
+
+An address with no host or an unspecified one, such as `:8080` or
+`0.0.0.0:8080`, is checked on `localhost`. When the receiver uses TLS, the
+check connects over TLS but does not verify the receiver's certificate, as
+the names in it cannot match `localhost`, and only the receiver's health is
+asked for.
+
+Kubernetes ignores `HEALTHCHECK`, so use the probes above, and Podman ignores
+it for images in the OCI format.
+
 ## High Availability
 
 The receiver keeps no state of its own: what is firing is held by
