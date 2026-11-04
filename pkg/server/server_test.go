@@ -207,7 +207,7 @@ func TestNewServiceSyncServerRejectsConfig(t *testing.T) {
 		{"negative SRV cache TTL", []ServiceSyncServerOption{WithSRVCacheTTL(-time.Second)}, "invalid SRV cache TTL -1s: must not be negative"},
 		{"invalid header", []ServiceSyncServerOption{WithHeaders(map[string]string{"X Scope": "noc"})}, `invalid header "X Scope"`},
 		{"reserved header", []ServiceSyncServerOption{WithHeaders(map[string]string{"Host": "am"})}, `invalid header "Host": Host cannot be set`},
-		{"URL map with query", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon:8980/opennms/?x=1"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon:8980/opennms/?x=1": must not have a query`},
+		{"URL map with query", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon:8980/opennms/?x=1"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon:8980/opennms/": must not have a query`},
 		{"unparseable URL map", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon 1:8980/opennms/"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon 1:8980/opennms/": invalid character " " in host name`},
 		{"URL map with empty instance ID", []ServiceSyncServerOption{WithURLMapping(map[string]string{"": "http://horizon:8980/opennms/"})}, "invalid URL map: an instance ID is empty"},
 		{"flush threshold", []ServiceSyncServerOption{WithFlushThreshold(0)}, "invalid flush threshold 0: must be at least 1"},
@@ -278,6 +278,27 @@ func TestNewServiceSyncServerLogOnly(t *testing.T) {
 				t.Errorf("warned = %v, want %v, logs %q", got, tt.wantWarn, logs.String())
 			}
 		})
+	}
+}
+
+// TestNewServiceSyncServerLogsAlertmanagers checks the Alertmanagers are
+// logged at startup without the credentials or query of their URLs
+func TestNewServiceSyncServerLogsAlertmanagers(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	if _, err := NewServiceSyncServer(
+		WithLogger(logger),
+		WithAlertmanagerUrl([]string{"https://noc:secret@am:9093/prefix?token=secret"}),
+	); err != nil {
+		t.Fatalf("NewServiceSyncServer() error = %v", err)
+	}
+
+	if !strings.Contains(logs.String(), "https://am:9093/prefix/api/v2/alerts") {
+		t.Errorf("logs = %q, want the alertmanager logged", logs.String())
+	}
+	if strings.Contains(logs.String(), "secret") || strings.Contains(logs.String(), "noc") {
+		t.Errorf("logs = %q, want no credentials or query", logs.String())
 	}
 }
 

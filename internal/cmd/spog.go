@@ -121,17 +121,14 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		server.WithSeverityMap(c.alertSeverity),
 	}
 
-	// set up alertmanager via url
+	// set up alertmanager via url, which is logged by the server without
+	// any credentials it holds
 	if len(c.alertManagers) > 0 {
-		c.logger.Debug("set up alertmanager", "urls", c.alertManagers)
-
 		opts = append(opts, server.WithAlertmanagerUrl(c.alertManagers))
 	}
 
 	// set up alertmanager via SRV
 	if c.alertManagerSrv != "" {
-		c.logger.Debug("set up alertmanager", "scheme", c.alertManagerScheme, "srv", c.alertManagerSrv)
-
 		opts = append(opts, server.WithAlertManagerSrv(c.alertManagerScheme, c.alertManagerSrv))
 	}
 

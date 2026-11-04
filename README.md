@@ -80,8 +80,7 @@ if:
 
 * An Alertmanager URL is not an `http` or `https` URL with a host, such as
   `am:9093` without a scheme, or has a fragment (`#...`). A path prefix,
-  credentials (`http://user:password@am:9093`) and a query string are allowed,
-  and passwords are hidden in any error.
+  credentials (`http://user:password@am:9093`) and a query string are allowed.
 * The same Alertmanager URL is listed more than once (`http://am:9093` and
   `http://am:9093/` are the same).
 * `--alertmanager.scheme` is not `http` or `https`.
@@ -89,6 +88,13 @@ if:
 
 If neither option is set, alarms are only logged and nothing is sent, and a
 warning is logged on startup.
+
+As credentials and query strings may be secret, an Alertmanager URL is only
+ever shown as `scheme://host[:port][/path]` in errors, logs and the
+`alertmanager` label of metrics. For example
+`https://noc:secret@am:9093/prefix?token=abc` is shown as
+`https://am:9093/prefix/api/v2/alerts`, while requests are still sent with the
+credentials and query string.
 
 Headers may be added to every request to Alertmanager, such as for
 authentication or a multi-tenant proxy:
@@ -125,7 +131,8 @@ When the receiver is stopped, it has up to 5 seconds to send the alarms it has
 already received, so stopping takes at most about 8 seconds, within the 10
 second default of `docker stop`.
 
-Delivery may be monitored with the following metrics, by `alertmanager`:
+Delivery may be monitored with the following metrics, by `alertmanager`, which
+is the URL alerts are posted to without any credentials or query string:
 
 | Metric                                | Description                                                |
 |---------------------------------------|------------------------------------------------------------|

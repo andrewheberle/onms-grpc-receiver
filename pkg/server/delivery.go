@@ -80,6 +80,17 @@ func (c deliveryConfig) build(logger *slog.Logger, reg prometheus.Registerer) (*
 		return nil, err
 	}
 
+	switch d := discovery.(type) {
+	case staticDiscovery:
+		names := make([]string, 0, len(d))
+		for _, u := range d {
+			names = append(names, safeURL(u))
+		}
+		logger.Debug("set up alertmanager", "urls", names)
+	case *srvDiscovery:
+		logger.Debug("set up alertmanager", "scheme", c.srvScheme, "srv", c.srvName)
+	}
+
 	return newAlertDelivery(discovery, c.headers, logger, reg)
 }
 
@@ -218,13 +229,15 @@ func (d *alertDelivery) send(ctx context.Context, alerts []*postableAlert) error
 }
 
 // post sends every chunk to the Alertmanager alerts URL u in turn, counting
-// the send and any failure
+// the send and any failure. Metrics, logs and errors show u as safeURL does,
+// as it may hold credentials.
 func (d *alertDelivery) post(ctx context.Context, u string, chunks [][]byte, logger *slog.Logger) error {
-	d.total.WithLabelValues(u).Inc()
+	name := safeURL(u)
+	d.total.WithLabelValues(name).Inc()
 
 	for i, payload := range chunks {
-		if err := d.postChunk(ctx, u, payload, logger); err != nil {
-			d.errors.WithLabelValues(u).Inc()
+		if err := d.postChunk(ctx, u, name, payload, logger); err != nil {
+			d.errors.WithLabelValues(name).Inc()
 			if len(chunks) > 1 {
 				return fmt.Errorf("sending chunk %d of %d: %w", i+1, len(chunks), err)
 			}
@@ -236,17 +249,18 @@ func (d *alertDelivery) post(ctx context.Context, u string, chunks [][]byte, log
 	return nil
 }
 
-// postChunk sends payload to the Alertmanager alerts URL u, retrying up to
-// maxAttempts requests in all while the failure may be temporary
-func (d *alertDelivery) postChunk(ctx context.Context, u string, payload []byte, logger *slog.Logger) error {
+// postChunk sends payload to the Alertmanager alerts URL u, shown as name,
+// retrying up to maxAttempts requests in all while the failure may be
+// temporary
+func (d *alertDelivery) postChunk(ctx context.Context, u, name string, payload []byte, logger *slog.Logger) error {
 	for attempt := 1; ; attempt++ {
-		err := d.do(ctx, u, payload, logger)
+		err := d.do(ctx, u, name, payload, logger)
 		if err == nil || attempt == maxAttempts || ctx.Err() != nil || !retryable(err) {
 			return err
 		}
 
 		wait := retryBackoff[attempt-1]
-		logger.Debug("retrying alertmanager", "url", u, "attempt", attempt+1, "wait", wait, "error", err)
+		logger.Debug("retrying alertmanager", "url", name, "attempt", attempt+1, "wait", wait, "error", err)
 
 		timer := time.NewTimer(wait)
 		select {
@@ -256,12 +270,13 @@ func (d *alertDelivery) postChunk(ctx context.Context, u string, payload []byte,
 		case <-timer.C:
 		}
 
-		d.retries.WithLabelValues(u).Inc()
+		d.retries.WithLabelValues(name).Inc()
 	}
 }
 
 // statusError is an unsuccessful response from an Alertmanager
 type statusError struct {
+	// url is the alerts URL of the Alertmanager as safeURL shows it
 	url    string
 	code   int
 	status string
@@ -289,20 +304,21 @@ func retryable(err error) bool {
 	return true
 }
 
-// do makes a single request to post payload to the Alertmanager alerts URL u
-func (d *alertDelivery) do(ctx context.Context, u string, payload []byte, logger *slog.Logger) error {
+// do makes a single request to post payload to the Alertmanager alerts URL
+// u, shown as name
+func (d *alertDelivery) do(ctx context.Context, u, name string, payload []byte, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("creating request for alertmanager %s: %w", u, err)
+		return fmt.Errorf("creating request for alertmanager %s: %w", name, hideURL(err, name))
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("sending to alertmanager: %w", err)
+		return fmt.Errorf("sending to alertmanager: %w", hideURL(err, name))
 	}
 	defer func() {
 		// read what remains of the body so the connection can be reused
@@ -313,12 +329,23 @@ func (d *alertDelivery) do(ctx context.Context, u string, payload []byte, logger
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 
-		return &statusError{url: u, code: resp.StatusCode, status: resp.Status, body: bytes.TrimSpace(body)}
+		return &statusError{url: name, code: resp.StatusCode, status: resp.Status, body: bytes.TrimSpace(body)}
 	}
 
-	logger.Info("sent to alertmanager", "url", u, "status", resp.Status)
+	logger.Info("sent to alertmanager", "url", name, "status", resp.Status)
 
 	return nil
+}
+
+// hideURL replaces the URL in err, if it is a *url.Error, with name. The
+// errors of http.Client include the request URL, hiding only its password.
+func hideURL(err error, name string) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		urlErr.URL = name
+	}
+
+	return err
 }
 
 // noDiscovery finds no Alertmanagers, so nothing is sent
@@ -350,13 +377,13 @@ func newStaticDiscovery(urls []string) (staticDiscovery, error) {
 
 		alertsURL, err := url.JoinPath(u, alertsPath)
 		if err != nil {
-			problems = append(problems, fmt.Errorf("invalid alertmanager URL %q: %w", redactURL(u), err))
+			problems = append(problems, fmt.Errorf("invalid alertmanager URL %q: %w", safeURL(u), err))
 			continue
 		}
 
 		// compare once joined, so "http://am" and "http://am/" are the same
 		if slices.Contains(d, alertsURL) {
-			problems = append(problems, fmt.Errorf("invalid alertmanager URL %q: listed more than once", redactURL(u)))
+			problems = append(problems, fmt.Errorf("invalid alertmanager URL %q: listed more than once", safeURL(u)))
 			continue
 		}
 		d = append(d, alertsURL)

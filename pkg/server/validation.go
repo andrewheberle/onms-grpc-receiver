@@ -12,7 +12,7 @@ import (
 
 // checkHTTPURL returns a problem with u as the URL of what, or nil if it is
 // an http or https URL with a host and no fragment. A query is only allowed
-// if allowQuery is set. Any password in u is redacted in the problem.
+// if allowQuery is set. The problem shows u as safeURL does.
 func checkHTTPURL(what, u string, allowQuery bool) error {
 	parsed, err := url.Parse(u)
 	if err != nil {
@@ -21,7 +21,7 @@ func checkHTTPURL(what, u string, allowQuery bool) error {
 			err = urlErr.Err
 		}
 
-		return fmt.Errorf("invalid %s %q: %w", what, redactURL(u), err)
+		return fmt.Errorf("invalid %s %q: %w", what, safeURL(u), err)
 	}
 
 	var problem string
@@ -38,27 +38,57 @@ func checkHTTPURL(what, u string, allowQuery bool) error {
 		return nil
 	}
 
-	return fmt.Errorf("invalid %s %q: %s", what, parsed.Redacted(), problem)
+	return fmt.Errorf("invalid %s %q: %s", what, safeURL(u), problem)
 }
 
-// redactURL hides any password in a URL that could not be parsed
-func redactURL(u string) string {
+// safeURL returns u as scheme://host[:port][/path], leaving out any user
+// name, password, query or fragment, as they may hold credentials. It is used
+// wherever a URL is shown: in metric labels, logs and errors. A URL that
+// cannot be parsed has the same parts removed as far as they can be found.
+func safeURL(u string) string {
+	if parsed, err := url.Parse(u); err == nil {
+		// a URL with no "//", such as "noc:secret@am:9093", is parsed as an
+		// opaque URL with "noc" as its scheme
+		opaque := parsed.Opaque
+		if i := strings.LastIndex(opaque, "@"); i >= 0 {
+			opaque = opaque[i+1:]
+		}
+
+		safe := url.URL{
+			Scheme:  parsed.Scheme,
+			Opaque:  opaque,
+			Host:    parsed.Host,
+			Path:    parsed.Path,
+			RawPath: parsed.RawPath,
+		}
+
+		return safe.String()
+	}
+
+	// remove the query and fragment
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+
+	// remove any user name and password from the authority, or from
+	// everything if there is no scheme
 	scheme, rest, ok := strings.Cut(u, "://")
 	if !ok {
+		if i := strings.LastIndex(u, "@"); i >= 0 {
+			return u[i+1:]
+		}
+
 		return u
 	}
-
-	at := strings.LastIndex(rest, "@")
-	if at < 0 {
-		return u
+	authority, path := rest, ""
+	if i := strings.Index(rest, "/"); i >= 0 {
+		authority, path = rest[:i], rest[i:]
+	}
+	if i := strings.LastIndex(authority, "@"); i >= 0 {
+		authority = authority[i+1:]
 	}
 
-	user, _, hasPassword := strings.Cut(rest[:at], ":")
-	if !hasPassword {
-		return u
-	}
-
-	return scheme + "://" + user + ":xxxxx" + rest[at:]
+	return scheme + "://" + authority + path
 }
 
 // reservedHeaders are headers that cannot be added to requests to
