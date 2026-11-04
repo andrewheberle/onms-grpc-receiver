@@ -162,11 +162,17 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	return nil
 }
 
-// healthPath is the path of the health check served with metrics
-const healthPath = "/-/healthy"
+// The paths of the health checks served with metrics
+const (
+	// healthPath is the liveness check, which is always OK
+	healthPath = "/-/healthy"
+
+	// readyPath is the readiness check, which is only OK while serving
+	readyPath = "/-/ready"
+)
 
 // checkMetricsPath returns a problem with p as the path metrics are served
-// on, which must be a plain path that does not clash with healthPath
+// on, which must be a plain path that does not clash with a health check
 func checkMetricsPath(p string) error {
 	var problem string
 	switch {
@@ -176,8 +182,8 @@ func checkMetricsPath(p string) error {
 		problem = "must not contain whitespace"
 	case strings.ContainsAny(p, "{}"):
 		problem = `must not contain "{" or "}"`
-	case p == healthPath:
-		problem = "clashes with the health check"
+	case p == healthPath || p == readyPath:
+		problem = "clashes with a health check"
 	default:
 		return nil
 	}
@@ -255,6 +261,7 @@ func (c *spogCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("Healthy"))
 		})
+		mux.Handle(readyPath, c.srv.HealthHandler())
 		mux.Handle(c.metricsPath, c.srv.MetricsHandler())
 
 		srv := &http.Server{

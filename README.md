@@ -368,10 +368,11 @@ snapshot that included it.
 
 Prometheus metrics are exposed on the `/metrics` path (by default) when the `--metrics.address` flag is provided.
 
-Enabling metrics also enables a health check endpoint at `/-/healthy` that responds with `200 OK`.
+Enabling metrics also enables the `/-/healthy` and `/-/ready` health checks
+(see [Health Checks](#health-checks)).
 
 The receiver will not start if `--metrics.path` does not start with `/`,
-contains whitespace, `{` or `}`, or is `/-/healthy`.
+contains whitespace, `{` or `}`, or is `/-/healthy` or `/-/ready`.
 
 ### Alarm snapshots
 
@@ -392,3 +393,41 @@ groups:
 ```
 
 The second rule also covers the period after the receiver restarts, until the next snapshot arrives.
+
+## Health Checks
+
+The receiver reports whether it is ready to receive alarm updates and
+heartbeats from Horizon instances. It is only ready while it is serving gRPC:
+not while it is starting, and not from the moment it starts stopping, so load
+balancers and Kubernetes stop sending new connections to it straight away.
+
+| Check                      | Where                          | Responds                                                       |
+|----------------------------|--------------------------------|----------------------------------------------------------------|
+| `/-/healthy`               | Metrics listener               | `200 OK` whenever the receiver is running (liveness)           |
+| `/-/ready`                 | Metrics listener               | `200 OK` while ready, otherwise `503 Service Unavailable`      |
+| `grpc.health.v1.Health`    | gRPC listener (`--address`)    | `SERVING` while ready, otherwise `NOT_SERVING`                 |
+
+The HTTP checks are only served when `--metrics.address` is set, which the
+container image does by default. The gRPC health service reports the same
+status for the server as a whole (an empty service name) and for
+`org.opennms.plugin.grpc.proto.spog.NmsInventoryServiceSync`.
+
+Readiness does not depend on whether Alertmanager can be reached. Alerts that
+cannot be sent are retried, and the next alarm snapshot repairs anything
+missed, while refusing Horizon instances would lose more alarm updates, and
+would make every receiver unready at the same time.
+
+In Kubernetes, use the HTTP checks, which also work when `--cert` and `--key`
+are set (with `scheme: HTTPS`), as Kubernetes gRPC probes do not support TLS:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /-/healthy
+    port: 8081
+readinessProbe:
+  httpGet:
+    path: /-/ready
+    port: 8081
+  periodSeconds: 5
+```

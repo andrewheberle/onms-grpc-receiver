@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
@@ -14,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -33,6 +36,12 @@ type ServiceSyncServer struct {
 	flushThreshold int
 	flushInterval  time.Duration
 	pipeline       *alertPipeline
+
+	// how far the server is through its life, and the gRPC health service
+	// that reports it while serving
+	readinessMu sync.Mutex
+	readiness   readiness
+	health      *health.Server
 
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
@@ -121,9 +130,21 @@ const gracefulStopTimeout = 3 * time.Second
 // until then, the alarms held by the alert pipeline are only flushed once
 // gRPC has stopped, and Serve returns once they have been sent, or after
 // shutdownFlushTimeout.
+//
+// The standard gRPC health service is also served, reporting the server as
+// serving only while gRPC is serving, as HealthHandler does. Once ctx is
+// cancelled or serving fails, both report it as not ready straight away.
 func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...grpc.ServerOption) error {
+	defer s.setReadiness(stopped)
+
 	grpcServer := grpc.NewServer(opts...)
 	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, s)
+
+	// the health server reports every service as serving until it is told
+	// otherwise, so it is set from the readiness before it is served
+	healthServer := health.NewServer()
+	s.setHealthServer(healthServer)
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
 
 	// the pipeline is not stopped by ctx, as it must keep running until gRPC
 	// has stopped
@@ -137,6 +158,9 @@ func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...g
 	served := make(chan error, 1)
 	go func() {
 		s.logger.Info("started gRPC receiver", "address", l.Addr().String())
+
+		// if stopping has already started, the server stays stopping
+		s.setReadiness(serving)
 		served <- grpcServer.Serve(l)
 	}()
 
@@ -144,6 +168,7 @@ func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...g
 	select {
 	case <-ctx.Done():
 		s.logger.Info("stopping gRPC receiver")
+		s.setReadiness(stopping)
 		timer := time.AfterFunc(gracefulStopTimeout, grpcServer.Stop)
 		grpcServer.GracefulStop()
 		timer.Stop()
@@ -154,6 +179,7 @@ func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...g
 			err = nil
 		}
 	case err = <-served:
+		s.setReadiness(stopping)
 		grpcServer.Stop()
 	}
 
