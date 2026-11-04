@@ -36,8 +36,8 @@ func (c *healthcheckCommand) Init(cd *simplecobra.Commandeer) error {
 	}
 
 	cmd := cd.CobraCommand
-	cmd.Flags().StringVar(&c.address, "address", defaultAddress, "Service gRPC listen address of the receiver to check")
-	cmd.Flags().StringVar(&c.cert, "cert", "", "TLS Certificate of the receiver to check, which is connected to with TLS and must present it when set")
+	cmd.Flags().StringVar(&c.address, flagAddress, defaultAddress, "Service gRPC listen address of the receiver to check")
+	cmd.Flags().StringVar(&c.cert, flagCert, "", "TLS Certificate of the receiver to check, which is connected to with TLS and must present it when set")
 	cmd.Flags().DurationVar(&c.timeout, "timeout", 3*time.Second, "How long the check may take")
 
 	return nil

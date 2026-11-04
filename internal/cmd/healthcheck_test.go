@@ -258,6 +258,67 @@ func TestHealthcheck(t *testing.T) {
 	}
 }
 
+// TestHealthcheckSharesSpogEnvironment checks healthcheck is configured by
+// the same environment variables as spog, as in the container image, so
+// renaming a shared flag in only one of them is caught
+func TestHealthcheckSharesSpogEnvironment(t *testing.T) {
+	cert := writeCert(t, t.TempDir(), "receiver", []string{"receiver.example.com"}, nil, false)
+
+	tests := []struct {
+		name string
+		env  map[string]string
+		cert *testCert
+	}{
+		{"plaintext", map[string]string{}, nil},
+		{"tls", map[string]string{"ONMS_GRPC_CERT": cert.certPath, "ONMS_GRPC_KEY": cert.keyPath}, cert},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := freeAddress(t)
+			t.Setenv("ONMS_GRPC_ADDRESS", addr)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			// the receiver is configured by the environment alone
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() {
+				done <- Execute(ctx, []string{"spog", "--silent"})
+			}()
+			t.Cleanup(func() {
+				cancel()
+				if err := <-done; err != nil {
+					t.Errorf("receiver error = %v", err)
+				}
+			})
+
+			var tlsConf *tls.Config
+			if tt.cert != nil {
+				var err error
+				if tlsConf, err = tlsConfig(tt.cert.certPath); err != nil {
+					t.Fatalf("tlsConfig() error = %v", err)
+				}
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				if status, _ := checkHealth(context.Background(), addr, tlsConf); status == healthpb.HealthCheckResponse_SERVING {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("receiver configured by the environment is not serving on %s", addr)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+
+			// and so is the check, with no arguments
+			if err := Execute(context.Background(), []string{"healthcheck", "--timeout", "1s"}); err != nil {
+				t.Errorf("Execute() error = %v, want the receiver configured by the same environment checked", err)
+			}
+		})
+	}
+}
+
 // TestHealthcheckDefaultAddress checks that with no flags or environment
 // variables, the receiver at the default address of spog is checked
 func TestHealthcheckDefaultAddress(t *testing.T) {
