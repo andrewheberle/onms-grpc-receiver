@@ -462,14 +462,16 @@ The `healthcheck` command reads the same `ONMS_GRPC_` environment variables as
 | Flag      | Decription                                                       | Default        |
 |-----------|------------------------------------------------------------------|----------------|
 | --address | Service gRPC listen address of the receiver to check             | localhost:8080 |
-| --cert    | Connect with TLS, without verifying the certificate, when set    |                |
+| --cert    | Connect with TLS, expecting this certificate, when set           |                |
 | --timeout | How long the check may take                                      | 3s             |
 
 An address with no host or an unspecified one, such as `:8080` or
 `0.0.0.0:8080`, is checked on `localhost`. When the receiver uses TLS, the
-check connects over TLS but does not verify the receiver's certificate, as
-the names in it cannot match `localhost`, and only the receiver's health is
-asked for.
+check connects over TLS and the receiver must present the certificate given
+by `--cert` (the first one in the file), which is verified for the first DNS
+name or IP address in it, as the address dialled cannot match it. This works
+for both self-signed certificates and those issued by a CA, but a certificate
+with no DNS names or IP addresses cannot be checked.
 
 Kubernetes ignores `HEALTHCHECK`, so use the probes above, and Podman ignores
 it for images in the OCI format.

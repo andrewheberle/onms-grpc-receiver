@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -45,45 +46,80 @@ func TestDialAddress(t *testing.T) {
 	}
 }
 
-// writeSelfSignedCert writes a self-signed certificate and its key to dir,
-// returning their paths
-func writeSelfSignedCert(t *testing.T, dir string) (string, string) {
+// testCert is a certificate and key written to files for a test
+type testCert struct {
+	cert     *x509.Certificate
+	key      *ecdsa.PrivateKey
+	certPath string
+	keyPath  string
+}
+
+// writeCert writes a certificate for names to dir as name.crt and name.key,
+// issued by issuer, or self-signed if issuer is nil. A CA certificate is
+// written if ca is set.
+func writeCert(t *testing.T, dir, name string, names []string, issuer *testCert, ca bool) *testCert {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "receiver.example.com"},
-		DNSNames:     []string{"receiver.example.com"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
+	serial, err := rand.Int(rand.Reader, big.NewInt(1<<62))
+	if err != nil {
+		t.Fatalf("rand.Int() error = %v", err)
 	}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	template := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: name},
+		DNSNames:              names,
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	if ca {
+		template.IsCA = true
+		template.KeyUsage |= x509.KeyUsageCertSign
+		template.ExtKeyUsage = nil
+	}
+
+	parent, parentKey := template, key
+	if issuer != nil {
+		parent, parentKey = issuer.cert, issuer.key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, parentKey)
 	if err != nil {
 		t.Fatalf("CreateCertificate() error = %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("ParseCertificate() error = %v", err)
 	}
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		t.Fatalf("MarshalECPrivateKey() error = %v", err)
 	}
 
-	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
-	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+	tc := &testCert{
+		cert:     cert,
+		key:      key,
+		certPath: filepath.Join(dir, name+".crt"),
+		keyPath:  filepath.Join(dir, name+".key"),
+	}
+	if err := os.WriteFile(tc.certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
 		t.Fatalf("writing certificate error = %v", err)
 	}
-	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+	if err := os.WriteFile(tc.keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
 		t.Fatalf("writing key error = %v", err)
 	}
 
-	return certPath, keyPath
+	return tc
 }
 
 // runSpog runs a receiver with args until the test ends, waiting until it
-// is serving
-func runSpog(t *testing.T, useTLS bool, args ...string) {
+// is serving, checked with TLS for its certificate if cert is not nil
+func runSpog(t *testing.T, cert *testCert, args ...string) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -103,10 +139,18 @@ func runSpog(t *testing.T, useTLS bool, args ...string) {
 		}
 	})
 
+	var tlsConf *tls.Config
+	if cert != nil {
+		var err error
+		if tlsConf, err = tlsConfig(cert.certPath); err != nil {
+			t.Fatalf("tlsConfig() error = %v", err)
+		}
+	}
+
 	address := args[len(args)-1]
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		status, _ := checkHealth(context.Background(), address, useTLS)
+		status, _ := checkHealth(context.Background(), address, tlsConf)
 		if status == healthpb.HealthCheckResponse_SERVING {
 			return
 		}
@@ -137,7 +181,11 @@ func runHealthServer(t *testing.T, status healthpb.HealthCheckResponse_ServingSt
 }
 
 func TestHealthcheck(t *testing.T) {
-	certPath, keyPath := writeSelfSignedCert(t, t.TempDir())
+	dir := t.TempDir()
+	selfSigned := writeCert(t, dir, "self-signed", []string{"receiver.example.com"}, nil, false)
+	other := writeCert(t, dir, "other", []string{"receiver.example.com"}, nil, false)
+	ca := writeCert(t, dir, "ca", nil, nil, true)
+	issued := writeCert(t, dir, "issued", []string{"receiver.example.com"}, ca, false)
 
 	tests := []struct {
 		name    string
@@ -146,12 +194,12 @@ func TestHealthcheck(t *testing.T) {
 	}{
 		{"serving", func(t *testing.T) []string {
 			addr := freeAddress(t)
-			runSpog(t, false, "--address", addr)
+			runSpog(t, nil, "--address", addr)
 			return []string{"--address", addr}
 		}, ""},
 		{"from environment variables", func(t *testing.T) []string {
 			addr := freeAddress(t)
-			runSpog(t, false, "--address", addr)
+			runSpog(t, nil, "--address", addr)
 			_, port, _ := net.SplitHostPort(addr)
 
 			// as in the container image, which also sets other variables
@@ -159,16 +207,32 @@ func TestHealthcheck(t *testing.T) {
 			t.Setenv("ONMS_GRPC_METRICS_ADDRESS", ":0")
 			return nil
 		}, ""},
-		{"tls", func(t *testing.T) []string {
+		{"tls with a self-signed certificate", func(t *testing.T) []string {
 			addr := freeAddress(t)
-			runSpog(t, true, "--cert", certPath, "--key", keyPath, "--address", addr)
-			return []string{"--address", addr, "--cert", certPath}
+			runSpog(t, selfSigned, "--cert", selfSigned.certPath, "--key", selfSigned.keyPath, "--address", addr)
+			return []string{"--address", addr, "--cert", selfSigned.certPath}
 		}, ""},
+		{"tls with a certificate issued by a ca", func(t *testing.T) []string {
+			addr := freeAddress(t)
+			runSpog(t, issued, "--cert", issued.certPath, "--key", issued.keyPath, "--address", addr)
+			return []string{"--address", addr, "--cert", issued.certPath}
+		}, ""},
+		{"tls presenting another certificate", func(t *testing.T) []string {
+			addr := freeAddress(t)
+			runSpog(t, selfSigned, "--cert", selfSigned.certPath, "--key", selfSigned.keyPath, "--address", addr)
+			return []string{"--address", addr, "--cert", other.certPath, "--timeout", "500ms"}
+		}, "certificate signed by unknown authority"},
 		{"tls without cert", func(t *testing.T) []string {
 			addr := freeAddress(t)
-			runSpog(t, true, "--cert", certPath, "--key", keyPath, "--address", addr)
+			runSpog(t, selfSigned, "--cert", selfSigned.certPath, "--key", selfSigned.keyPath, "--address", addr)
 			return []string{"--address", addr, "--timeout", "500ms"}
 		}, "checking health of"},
+		{"tls with a certificate without names", func(t *testing.T) []string {
+			return []string{"--address", freeAddress(t), "--cert", ca.certPath}
+		}, "has no DNS names or IP addresses"},
+		{"tls with a missing certificate", func(t *testing.T) []string {
+			return []string{"--address", freeAddress(t), "--cert", filepath.Join(dir, "missing.crt")}
+		}, "reading certificate"},
 		{"not serving", func(t *testing.T) []string {
 			return []string{"--address", runHealthServer(t, healthpb.HealthCheckResponse_NOT_SERVING)}
 		}, "is NOT_SERVING"},

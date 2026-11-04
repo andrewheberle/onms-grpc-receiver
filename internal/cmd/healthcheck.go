@@ -3,8 +3,11 @@ package cmd
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/andrewheberle/simplecommand/koanfcommand"
@@ -34,7 +37,7 @@ func (c *healthcheckCommand) Init(cd *simplecobra.Commandeer) error {
 
 	cmd := cd.CobraCommand
 	cmd.Flags().StringVar(&c.address, "address", defaultAddress, "Service gRPC listen address of the receiver to check")
-	cmd.Flags().StringVar(&c.cert, "cert", "", "TLS Certificate of the receiver to check, which is connected to with TLS when set")
+	cmd.Flags().StringVar(&c.cert, "cert", "", "TLS Certificate of the receiver to check, which is connected to with TLS and must present it when set")
 	cmd.Flags().DurationVar(&c.timeout, "timeout", 3*time.Second, "How long the check may take")
 
 	return nil
@@ -43,10 +46,18 @@ func (c *healthcheckCommand) Init(cd *simplecobra.Commandeer) error {
 func (c *healthcheckCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
 	target := dialAddress(c.address)
 
+	var tlsConf *tls.Config
+	if c.cert != "" {
+		var err error
+		if tlsConf, err = tlsConfig(c.cert); err != nil {
+			return err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	status, err := checkHealth(ctx, target, c.cert != "")
+	status, err := checkHealth(ctx, target, tlsConf)
 	if err != nil {
 		return fmt.Errorf("checking health of %s: %w", target, err)
 	}
@@ -59,15 +70,58 @@ func (c *healthcheckCommand) Run(ctx context.Context, cd *simplecobra.Commandeer
 	return nil
 }
 
+// tlsConfig returns the TLS configuration to check a receiver that serves
+// the certificate in certFile, the first in the file. The receiver is
+// checked over loopback, where the address dialled cannot match the names in
+// its certificate, so instead it must present that certificate, which is
+// trusted on its own and verified for the first name in it. This works
+// whether the certificate is self-signed or issued by a CA, as a certificate
+// that is itself trusted needs no chain.
+func tlsConfig(certFile string) (*tls.Config, error) {
+	data, err := os.ReadFile(certFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading certificate: %w", err)
+	}
+
+	var cert *x509.Certificate
+	for block, rest := pem.Decode(data); block != nil; block, rest = pem.Decode(rest) {
+		if block.Type == "CERTIFICATE" {
+			if cert, err = x509.ParseCertificate(block.Bytes); err != nil {
+				return nil, fmt.Errorf("parsing certificate in %s: %w", certFile, err)
+			}
+			break
+		}
+	}
+	if cert == nil {
+		return nil, fmt.Errorf("no certificate found in %s", certFile)
+	}
+
+	var name string
+	switch {
+	case len(cert.DNSNames) > 0:
+		name = cert.DNSNames[0]
+	case len(cert.IPAddresses) > 0:
+		name = cert.IPAddresses[0].String()
+	default:
+		return nil, fmt.Errorf("certificate in %s has no DNS names or IP addresses to verify it for", certFile)
+	}
+
+	roots := x509.NewCertPool()
+	roots.AddCert(cert)
+
+	return &tls.Config{
+		RootCAs:    roots,
+		ServerName: name,
+		MinVersion: tls.VersionTLS12,
+	}, nil
+}
+
 // checkHealth returns the overall status reported by the gRPC health service
-// at target, connecting with TLS if useTLS is set
-func checkHealth(ctx context.Context, target string, useTLS bool) (healthpb.HealthCheckResponse_ServingStatus, error) {
+// at target, connecting with tlsConf if it is not nil
+func checkHealth(ctx context.Context, target string, tlsConf *tls.Config) (healthpb.HealthCheckResponse_ServingStatus, error) {
 	creds := insecure.NewCredentials()
-	if useTLS {
-		// The receiver is checked over loopback, where the names in its
-		// certificate cannot match the address dialled, and only its health
-		// is asked for, so its certificate is not verified.
-		creds = credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // checking our own health over loopback, see above
+	if tlsConf != nil {
+		creds = credentials.NewTLS(tlsConf)
 	}
 
 	conn, err := grpc.NewClient("passthrough:///"+target, grpc.WithTransportCredentials(creds))
