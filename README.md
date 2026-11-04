@@ -74,6 +74,37 @@ onms-grpc-receiver spog --alertmanager.srv _http.alertmanager --alertmanager.sch
 The above options are mutually exclusive, in addition only basic validation of
 provided URLs is done, not that any Alertmanager is reachable on startup.
 
+### Delivery and Retries
+
+Every Alertmanager is sent every alert, as the members of an Alertmanager
+cluster do not share alerts with each other. Large updates, such as alarm
+snapshots, are sent in requests of up to 1000 alerts.
+
+A request that fails with a network error, a timeout (5 seconds), a `5xx`
+status or `429 Too Many Requests` is retried up to twice, after 500ms and then
+1s. Other responses, such as `400 Bad Request` when some alerts are invalid, are
+not retried, as Alertmanager has already stored the valid alerts, and the error
+from Alertmanager is logged. Sending to all Alertmanagers, including any
+retries, gives up after 10 seconds, so that an Alertmanager that is down does
+not hold up the alarms and heartbeats that follow.
+
+Alerts that could not be sent are not kept to be sent later. Firing alarms are
+sent again with the next alarm snapshot (every 2 minutes by default), and
+cleared alarms are sent with every snapshot until the resolve timeout plus any
+[hold](#handling-opennms-restarts) has passed since they were cleared.
+
+When the receiver is stopped, it has up to 5 seconds to send the alarms it has
+already received, so stopping takes at most about 8 seconds, within the 10
+second default of `docker stop`.
+
+Delivery may be monitored with the following metrics, by `alertmanager`:
+
+| Metric                                | Description                                                |
+|---------------------------------------|------------------------------------------------------------|
+| `onmsgrpc_alertmanager_total`         | Sends of alerts to an Alertmanager                         |
+| `onmsgrpc_alertmanager_failed_total`  | Sends to an Alertmanager that failed, after any retries    |
+| `onmsgrpc_alertmanager_retries_total` | Requests to an Alertmanager that were retried              |
+
 ### Alert Names and Labels
 
 The alert name sent to Alertmanager is the OpenNMS "uei" value such as

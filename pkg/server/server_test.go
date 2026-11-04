@@ -337,6 +337,7 @@ func TestServiceSyncServerMetrics(t *testing.T) {
 		"onmsgrpc_alarm_dropped_total":                   "Total number of alarms dropped due to the queue being full or the server stopping.",
 		"onmsgrpc_alertmanager_total":                    "Total number of messages sent to alertmanager.",
 		"onmsgrpc_alertmanager_failed_total":             "Total number of messages that could not be sent to alertmanager.",
+		"onmsgrpc_alertmanager_retries_total":            "Total number of requests to alertmanager that were retried after a failure.",
 		"onmsgrpc_alertmanager_lookup_error_total":       "Total number of errors during lookups of Alertmanagers.",
 	}
 	if !reflect.DeepEqual(got, want) {

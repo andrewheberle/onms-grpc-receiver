@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -486,5 +488,222 @@ func TestSRVDiscoveryNoCache(t *testing.T) {
 	want := []string{"https://am.example.com:9092/api/v2/alerts"}
 	if got := alertmanagers(t, d); !reflect.DeepEqual(got, want) {
 		t.Errorf("alertmanagers() = %v, want %v looked up every time", got, want)
+	}
+}
+
+// reply is how a fakeTransport answers a request: with a status code, an
+// error, or, if neither is set, not at all until the request is cancelled
+type reply struct {
+	status int
+	err    error
+}
+
+// fakeTransport is an http.RoundTripper standing in for Alertmanagers, so
+// requests can be made in a synctest bubble. It answers each request with
+// respond, given the host and how many requests that host had before, and
+// records how many alerts were in each request to each host.
+type fakeTransport struct {
+	respond func(host string, n int) reply
+
+	mu     sync.Mutex
+	alerts map[string][]int
+}
+
+func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var alerts []postableAlert
+	if err := json.NewDecoder(req.Body).Decode(&alerts); err != nil {
+		return nil, err
+	}
+
+	f.mu.Lock()
+	if f.alerts == nil {
+		f.alerts = make(map[string][]int)
+	}
+	n := len(f.alerts[req.URL.Host])
+	f.alerts[req.URL.Host] = append(f.alerts[req.URL.Host], len(alerts))
+	f.mu.Unlock()
+
+	r := f.respond(req.URL.Host, n)
+	switch {
+	case r.err != nil:
+		return nil, r.err
+	case r.status == 0:
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	}
+
+	return &http.Response{
+		StatusCode: r.status,
+		Status:     fmt.Sprintf("%d %s", r.status, http.StatusText(r.status)),
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+// requests returns how many alerts were in each request to host
+func (f *fakeTransport) requests(host string) []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.alerts[host]
+}
+
+// newFakeDelivery returns an alertDelivery that sends to an Alertmanager at
+// each host through transport, and the registry of its metrics
+func newFakeDelivery(t *testing.T, transport http.RoundTripper, hosts ...string) (*alertDelivery, *prometheus.Registry) {
+	t.Helper()
+
+	urls := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		urls = append(urls, "http://"+host)
+	}
+
+	reg := prometheus.NewRegistry()
+	d := newAlertDelivery(newTestStaticDiscovery(t, urls...), nil, slog.New(slog.DiscardHandler), reg)
+	d.client.Transport = transport
+
+	return d, reg
+}
+
+// manyAlerts returns n alerts
+func manyAlerts(n int) []*postableAlert {
+	alerts := make([]*postableAlert, 0, n)
+	for i := range n {
+		alerts = append(alerts, &postableAlert{
+			Labels: map[string]string{"alertname": "test", "alarm_id": fmt.Sprint(i)},
+		})
+	}
+
+	return alerts
+}
+
+// TestAlertDeliveryRetry checks which failures of an Alertmanager are
+// retried, with what backoff, and that a send gives up after sendTimeout
+func TestAlertDeliveryRetry(t *testing.T) {
+	var (
+		ok      = reply{status: http.StatusOK}
+		hang    = reply{}
+		network = reply{err: errors.New("connection refused")}
+	)
+
+	tests := []struct {
+		name        string
+		replies     []reply
+		wantErr     bool
+		wantRetries float64
+		wantTime    time.Duration
+	}{
+		{"accepted", []reply{ok}, false, 0, 0},
+		{"server error then accepted", []reply{{status: http.StatusServiceUnavailable}, ok}, false, 1, 500 * time.Millisecond},
+		{"rate limited then accepted", []reply{{status: http.StatusTooManyRequests}, ok}, false, 1, 500 * time.Millisecond},
+		{"network error then accepted", []reply{network, ok}, false, 1, 500 * time.Millisecond},
+		{"server errors", []reply{{status: 500}, {status: 500}, {status: 500}}, true, 2, 1500 * time.Millisecond},
+		{"invalid alerts", []reply{{status: http.StatusBadRequest}}, true, 0, 0},
+		{"not found", []reply{{status: http.StatusNotFound}}, true, 0, 0},
+		{"no response", []reply{hang, hang}, true, 1, sendTimeout},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				transport := &fakeTransport{respond: func(_ string, n int) reply {
+					if n >= len(tt.replies) {
+						t.Errorf("request %d made, want only %d", n+1, len(tt.replies))
+						return ok
+					}
+					return tt.replies[n]
+				}}
+				d, reg := newFakeDelivery(t, transport, "am")
+
+				start := time.Now()
+				err := d.send(context.Background(), testAlerts())
+
+				if (err != nil) != tt.wantErr {
+					t.Errorf("send() error = %v, want error %v", err, tt.wantErr)
+				}
+				if got := len(transport.requests("am")); got != len(tt.replies) {
+					t.Errorf("made %d requests, want %d", got, len(tt.replies))
+				}
+				if got := time.Since(start); got != tt.wantTime {
+					t.Errorf("send() took %v, want %v", got, tt.wantTime)
+				}
+
+				wantFailed := 0.0
+				if tt.wantErr {
+					wantFailed = 1
+				}
+				for _, m := range []struct {
+					name string
+					want float64
+				}{
+					{"onmsgrpc_alertmanager_total", 1},
+					{"onmsgrpc_alertmanager_failed_total", wantFailed},
+					{"onmsgrpc_alertmanager_retries_total", tt.wantRetries},
+				} {
+					if got := metricValue(t, reg, m.name, "alertmanager", "http://am"+alertsPath); got != m.want {
+						t.Errorf("%s = %v, want %v", m.name, got, m.want)
+					}
+				}
+			})
+		})
+	}
+}
+
+// TestAlertDeliveryChunks checks alerts are sent in chunks of chunkSize, and
+// that a chunk an Alertmanager does not accept stops the rest for that
+// Alertmanager only
+func TestAlertDeliveryChunks(t *testing.T) {
+	tests := []struct {
+		name    string
+		alerts  int
+		reject  int // the request rejected by Alertmanager "a", or -1
+		wantA   []int
+		wantB   []int
+		wantErr string
+	}{
+		{"one chunk", chunkSize, -1, []int{chunkSize}, []int{chunkSize}, ""},
+		{"three chunks", chunkSize*2 + 500, -1, []int{chunkSize, chunkSize, 500}, []int{chunkSize, chunkSize, 500}, ""},
+		{"second chunk rejected", chunkSize*2 + 500, 1, []int{chunkSize, chunkSize}, []int{chunkSize, chunkSize, 500}, "sending chunk 2 of 3: alertmanager http://a/api/v2/alerts returned 400 Bad Request"},
+		{"only chunk rejected", 10, 0, []int{10}, []int{10}, "alertmanager http://a/api/v2/alerts returned 400 Bad Request"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				transport := &fakeTransport{respond: func(host string, n int) reply {
+					if host == "a" && n == tt.reject {
+						return reply{status: http.StatusBadRequest}
+					}
+					return reply{status: http.StatusOK}
+				}}
+				d, reg := newFakeDelivery(t, transport, "a", "b")
+
+				err := d.send(context.Background(), manyAlerts(tt.alerts))
+
+				switch {
+				case tt.wantErr == "" && err != nil:
+					t.Errorf("send() error = %v", err)
+				case tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr):
+					t.Errorf("send() error = %v, want %q", err, tt.wantErr)
+				}
+				if got := transport.requests("a"); !reflect.DeepEqual(got, tt.wantA) {
+					t.Errorf("alertmanager a got requests of %v alerts, want %v", got, tt.wantA)
+				}
+				if got := transport.requests("b"); !reflect.DeepEqual(got, tt.wantB) {
+					t.Errorf("alertmanager b got requests of %v alerts, want %v", got, tt.wantB)
+				}
+
+				for host, want := range map[string]float64{"a": 1, "b": 0} {
+					if tt.reject < 0 {
+						want = 0
+					}
+					if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", "http://"+host+alertsPath); got != want {
+						t.Errorf("failed for %s = %v, want %v", host, got, want)
+					}
+					if got := metricValue(t, reg, "onmsgrpc_alertmanager_total", "alertmanager", "http://"+host+alertsPath); got != 1 {
+						t.Errorf("total for %s = %v, want 1 for the whole send", host, got)
+					}
+				}
+			})
+		})
 	}
 }

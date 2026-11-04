@@ -67,7 +67,7 @@ Everything that happens to an Alarm update or Heartbeat after it is received, th
 _Avoid_: Handler, processor, worker
 
 **Alert delivery**:
-Sending Alerts to every Alertmanager currently known.
+Sending Alerts to every Alertmanager currently known. It has failed when any Alertmanager has not accepted the Alerts once retries are used up.
 _Avoid_: Forwarding, dispatch, notification
 
 **Alert translation**:
