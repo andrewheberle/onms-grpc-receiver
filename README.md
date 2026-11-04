@@ -431,3 +431,43 @@ readinessProbe:
     port: 8081
   periodSeconds: 5
 ```
+
+## High Availability
+
+The receiver keeps no state of its own: what is firing is held by
+Alertmanager, and every alarm snapshot from OpenNMS repairs anything missed.
+So several receivers can run side by side, active/active, behind a TCP load
+balancer or a Kubernetes Service, with nothing shared between them.
+
+* Each Horizon instance connects to one receiver at a time, as its gRPC
+  exporter sends everything over a single connection to the host it is
+  configured with.
+* Configure every receiver with the same Alertmanagers and the same options,
+  so an alarm is sent as the same alert whichever receiver it reaches.
+* Use the [readiness checks](#health-checks), so a receiver that is starting
+  or stopping is not sent new connections.
+
+When a receiver stops or fails, the Horizon instances connected to it
+reconnect to another within about 30 seconds, which is how often their
+exporter retries. Alarm updates and heartbeats sent while disconnected are
+lost, so alarms are only correct again with the next alarm snapshot (every 2
+minutes by default). An alert must therefore stay active for at least about
+2½ minutes after it is last sent, so `--resolve.timeout` plus any
+`--resolve.hold` should be at least 3 minutes. The default resolve timeout of
+5 minutes is enough.
+
+An alarm update queued on a receiver as it stops can reach Alertmanager after
+a newer update for the same alarm sent through another receiver. If that
+update cleared the alarm, the alert fires again until the next snapshot
+resolves it, within about 2 minutes.
+
+Receivers do not close connections to spread them evenly, such as after
+adding a receiver, as each reconnect loses up to a minute of alarm updates
+from that Horizon instance. Connections move when receivers are restarted, as
+in a rolling update.
+
+A connection with nothing received for 2 minutes is pinged, and closed if the
+ping is not answered within 20 seconds, as Horizon instances send no pings of
+their own. As each Horizon instance sends a heartbeat every minute, this only
+happens when an instance or the network to it has gone away, so its connection
+is not held open until TCP gives up.

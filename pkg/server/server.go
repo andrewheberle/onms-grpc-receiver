@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -118,6 +119,19 @@ func (s *ServiceSyncServer) MetricsHandler() http.Handler {
 	})
 }
 
+// keepaliveParams are how idle connections are checked. Horizon instances
+// send no keepalive pings of their own, so a connection to one that has gone
+// away without closing it would otherwise be held until TCP gives up, which
+// may take hours. Instead, a connection with nothing received for Time is
+// pinged, and closed if the ping is not answered within Timeout. Horizon
+// instances send a heartbeat every minute, so this only happens when one
+// stops. Connections are never closed for their age alone, as Horizon only
+// reconnects after 30 seconds, dropping the alarm updates in between.
+var keepaliveParams = keepalive.ServerParameters{
+	Time:    2 * time.Minute,
+	Timeout: 20 * time.Second,
+}
+
 // gracefulStopTimeout is how long gRPC streams are given to finish when
 // stopping before they are closed
 const gracefulStopTimeout = 3 * time.Second
@@ -134,10 +148,13 @@ const gracefulStopTimeout = 3 * time.Second
 // The standard gRPC health service is also served, reporting the server as
 // serving only while gRPC is serving, as HealthHandler does. Once ctx is
 // cancelled or serving fails, both report it as not ready straight away.
+//
+// Idle connections are checked with keepaliveParams, which opts are applied
+// after, so they may replace it.
 func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...grpc.ServerOption) error {
 	defer s.setReadiness(stopped)
 
-	grpcServer := grpc.NewServer(opts...)
+	grpcServer := grpc.NewServer(append([]grpc.ServerOption{grpc.KeepaliveParams(keepaliveParams)}, opts...)...)
 	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, s)
 
 	// the health server reports every service as serving until it is told
