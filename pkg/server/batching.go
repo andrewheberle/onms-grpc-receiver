@@ -80,14 +80,31 @@ func (b *alarmBatcher) add(alarms []instanceAlarm) {
 	}
 }
 
+// shutdownFlushTimeout is how long flushes have to finish once the batcher
+// is stopped, so that stopping fits within the 10 second grace period of
+// docker stop. See ADR 0004.
+const shutdownFlushTimeout = 5 * time.Second
+
 // run batches and flushes queued alarms until ctx is cancelled, when it stops
 // queueing alarm updates and flushes everything already queued.
 //
-// Every flush is given a context that is not cancelled with ctx, so a flush
-// in progress when ctx is cancelled, and the final flush on shutdown, still
-// send their alerts.
+// Flushes are given a context that is not cancelled with ctx, so a flush in
+// progress when ctx is cancelled, and the final flush on shutdown, still send
+// their alerts. Instead, it is cancelled shutdownFlushTimeout after ctx.
 func (b *alarmBatcher) run(ctx context.Context) {
-	flushCtx := context.WithoutCancel(ctx)
+	flushCtx, cancelFlush := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelFlush()
+	stopShutdownTimer := context.AfterFunc(ctx, func() {
+		timer := time.NewTimer(shutdownFlushTimeout)
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+			cancelFlush()
+		case <-flushCtx.Done():
+		}
+	})
+	defer stopShutdownTimer()
 
 	var batch []instanceAlarm
 	timer := time.NewTimer(b.flushInterval)

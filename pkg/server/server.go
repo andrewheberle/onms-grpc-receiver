@@ -113,7 +113,8 @@ const gracefulStopTimeout = 3 * time.Second
 // When ctx is cancelled no new streams are accepted, while open streams are
 // given up to gracefulStopTimeout to finish. As alarm updates are received
 // until then, the alarms held by the alert pipeline are only flushed once
-// gRPC has stopped, and Serve returns once they have been sent.
+// gRPC has stopped, and Serve returns once they have been sent, or after
+// shutdownFlushTimeout.
 func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...grpc.ServerOption) error {
 	grpcServer := grpc.NewServer(opts...)
 	pb.RegisterNmsInventoryServiceSyncServer(grpcServer, s)

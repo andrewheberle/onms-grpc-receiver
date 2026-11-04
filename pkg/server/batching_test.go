@@ -285,6 +285,53 @@ func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
 	}
 }
 
+// TestAlarmBatcherShutdownFlushTimeout checks flushes that are still running
+// once the batcher is stopped, whether the final flush or one already in
+// progress, are cancelled after shutdownFlushTimeout
+func TestAlarmBatcherShutdownFlushTimeout(t *testing.T) {
+	tests := []struct {
+		name           string
+		flushThreshold int
+	}{
+		{"final flush", 100},
+		{"flush in progress", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				// each flush waits for its context to be cancelled, as for
+				// an Alertmanager that does not respond
+				var mu sync.Mutex
+				var stoppedAt time.Time
+				var waited []time.Duration
+				flush := func(ctx context.Context, batch []instanceAlarm) {
+					<-ctx.Done()
+
+					mu.Lock()
+					waited = append(waited, time.Since(stoppedAt))
+					mu.Unlock()
+				}
+
+				b := newAlarmBatcher(flush, 10, tt.flushThreshold, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+				cancel, done := runBatcher(t, b)
+
+				b.add(update(1))
+				synctest.Wait()
+
+				mu.Lock()
+				stoppedAt = time.Now()
+				mu.Unlock()
+				cancel()
+				<-done
+
+				if len(waited) != 1 || waited[0] != shutdownFlushTimeout {
+					t.Errorf("flushes cancelled after %v, want one cancelled after %v", waited, shutdownFlushTimeout)
+				}
+			})
+		})
+	}
+}
+
 func TestAlarmBatcherAddAfterShutdown(t *testing.T) {
 	r := newRecordingFlush()
 	reg := prometheus.NewRegistry()
