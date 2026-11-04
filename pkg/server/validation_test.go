@@ -31,8 +31,10 @@ func TestCheckHTTPURL(t *testing.T) {
 		{"fragment", "http://am:9093/#x", true, "must not have a fragment"},
 		{"empty fragment", "http://am:9093/#", true, "must not have a fragment"},
 		{"unparseable", "http://am 1:9093", false, "invalid character"},
-		{"password redacted", "ftp://noc:secret@am:9093", false, `"ftp://noc:xxxxx@am:9093"`},
-		{"unparseable password redacted", "http://noc:secret@am 1:9093", false, `"http://noc:xxxxx@am 1:9093"`},
+		{"credentials hidden", "ftp://noc:secret@am:9093", false, `"ftp://am:9093"`},
+		{"unparseable credentials hidden", "http://noc:secret@am 1:9093", false, `"http://am 1:9093"`},
+		{"query hidden", "http://am:9093/?token=secret#x", true, `"http://am:9093/": must not have a fragment`},
+		{"opaque credentials hidden", "noc:secret@am:9093", false, `"noc:am:9093": must be http or https`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -48,6 +50,39 @@ func TestCheckHTTPURL(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), "secret") {
 				t.Errorf("checkHTTPURL() error = %v, want the password redacted", err)
+			}
+		})
+	}
+}
+
+func TestSafeURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"plain", "http://am:9093/api/v2/alerts", "http://am:9093/api/v2/alerts"},
+		{"no port", "https://am.example.com/prefix/api/v2/alerts", "https://am.example.com/prefix/api/v2/alerts"},
+		{"credentials", "https://noc:secret@am:9093/api/v2/alerts", "https://am:9093/api/v2/alerts"},
+		{"user name only", "https://noc@am:9093/api/v2/alerts", "https://am:9093/api/v2/alerts"},
+		{"query", "http://am:9093/api/v2/alerts?token=secret&org=noc", "http://am:9093/api/v2/alerts"},
+		{"empty query", "http://am:9093/api/v2/alerts?", "http://am:9093/api/v2/alerts"},
+		{"fragment", "http://am:9093/api/v2/alerts#secret", "http://am:9093/api/v2/alerts"},
+		{"everything", "https://noc:secret@am:9093/prefix/api/v2/alerts?token=secret#secret", "https://am:9093/prefix/api/v2/alerts"},
+		{"escaped path", "http://am:9093/a%2Fb/api/v2/alerts", "http://am:9093/a%2Fb/api/v2/alerts"},
+		{"ipv6", "http://noc:secret@[::1]:9093/api/v2/alerts", "http://[::1]:9093/api/v2/alerts"},
+		{"no scheme", "am:9093", "am:9093"},
+		{"opaque credentials", "noc:secret@am:9093", "noc:am:9093"},
+		{"empty", "", ""},
+		{"unparseable", "http://noc:secret@am 1:9093/prefix?token=secret", "http://am 1:9093/prefix"},
+		{"unparseable password with at", "http://noc:p@ss@am 1:9093", "http://am 1:9093"},
+		{"opaque with space", "noc:secret@am 1:9093?token=secret", "noc:am 1:9093"},
+		{"unparseable without scheme", "%zz:secret@am:9093?token=secret", "am:9093"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := safeURL(tt.url); got != tt.want {
+				t.Errorf("safeURL(%q) = %q, want %q", tt.url, got, tt.want)
 			}
 		})
 	}

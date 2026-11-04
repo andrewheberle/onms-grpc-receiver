@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -513,6 +514,9 @@ type reply struct {
 type fakeTransport struct {
 	respond func(host string, n int) reply
 
+	// onRequest, if set, is called with each request
+	onRequest func(req *http.Request)
+
 	mu     sync.Mutex
 	alerts map[string][]int
 }
@@ -530,6 +534,10 @@ func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	n := len(f.alerts[req.URL.Host])
 	f.alerts[req.URL.Host] = append(f.alerts[req.URL.Host], len(alerts))
 	f.mu.Unlock()
+
+	if f.onRequest != nil {
+		f.onRequest(req)
+	}
 
 	r := f.respond(req.URL.Host, n)
 	switch {
@@ -710,6 +718,92 @@ func TestAlertDeliveryChunks(t *testing.T) {
 					if got := metricValue(t, reg, "onmsgrpc_alertmanager_total", "alertmanager", "http://"+host+alertsPath); got != 1 {
 						t.Errorf("total for %s = %v, want 1 for the whole send", host, got)
 					}
+				}
+			})
+		})
+	}
+}
+
+// TestAlertDeliveryHidesCredentials checks the credentials and query of an
+// Alertmanager URL are sent with requests, but are not in metric labels, logs
+// or errors, which show the URL as scheme://host[:port][/path]
+func TestAlertDeliveryHidesCredentials(t *testing.T) {
+	const (
+		amURL = "https://noc:secret-password@am:9093/prefix?token=secret-token"
+		name  = "https://am:9093/prefix/api/v2/alerts"
+	)
+
+	tests := []struct {
+		name    string
+		reply   reply
+		wantErr bool
+	}{
+		{"accepted", reply{status: http.StatusOK}, false},
+		{"server error", reply{status: http.StatusServiceUnavailable}, true},
+		{"network error", reply{err: errors.New("connection refused")}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var mu sync.Mutex
+				var requests []*http.Request
+				transport := &fakeTransport{
+					respond: func(string, int) reply { return tt.reply },
+					onRequest: func(req *http.Request) {
+						mu.Lock()
+						requests = append(requests, req)
+						mu.Unlock()
+					},
+				}
+
+				var logs bytes.Buffer
+				reg := prometheus.NewRegistry()
+				discovery := newTestStaticDiscovery(t, amURL)
+				d := must(newAlertDelivery(discovery, nil, slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})), reg))(t)
+				d.client.Transport = transport
+
+				err := d.send(context.Background(), testAlerts())
+				if (err != nil) != tt.wantErr {
+					t.Fatalf("send() error = %v, want error %v", err, tt.wantErr)
+				}
+
+				// the request still has the credentials and query
+				if len(requests) == 0 {
+					t.Fatal("no request made")
+				}
+				user, password, _ := requests[0].BasicAuth()
+				if user != "noc" || password != "secret-password" || requests[0].URL.Query().Get("token") != "secret-token" {
+					t.Errorf("request to %s with basic auth %q:%q, want the credentials and query of the URL", requests[0].URL, user, password)
+				}
+
+				shown := map[string]string{"logs": logs.String()}
+				if err != nil {
+					shown["error"] = err.Error()
+					if !strings.Contains(err.Error(), name) {
+						t.Errorf("send() error = %q, want containing %q", err, name)
+					}
+				}
+				families, gatherErr := reg.Gather()
+				if gatherErr != nil {
+					t.Fatalf("Gather() error = %v", gatherErr)
+				}
+				for _, family := range families {
+					for _, m := range family.GetMetric() {
+						for _, l := range m.GetLabel() {
+							shown[family.GetName()] += l.GetValue()
+						}
+					}
+				}
+				for where, text := range shown {
+					for _, secret := range []string{"noc", "secret"} {
+						if strings.Contains(text, secret) {
+							t.Errorf("%s contain %q: %s", where, secret, text)
+						}
+					}
+				}
+
+				if got := metricValue(t, reg, "onmsgrpc_alertmanager_total", "alertmanager", name); got != 1 {
+					t.Errorf("total for %s = %v, want 1", name, got)
 				}
 			})
 		})
