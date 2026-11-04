@@ -19,12 +19,20 @@ type instanceAlarm struct {
 	instanceName string
 }
 
+// alertSender sends alerts to every Alertmanager currently known
+type alertSender interface {
+	// send sends alerts, returning an error describing every Alertmanager
+	// that did not accept them, or that the Alertmanagers could not be
+	// found. ctx bounds the whole send.
+	send(ctx context.Context, alerts []*postableAlert) error
+}
+
 // alertPipeline handles alarm updates and heartbeats once they are received,
 // through alert translation to alert delivery. Alarms are batched before they
 // are sent, while heartbeats are sent as they are received.
 type alertPipeline struct {
 	translator *alertTranslator
-	delivery   *alertDelivery
+	sender     alertSender
 	batcher    *alarmBatcher
 	logger     *slog.Logger
 
@@ -39,13 +47,13 @@ type alertPipeline struct {
 }
 
 // newAlertPipeline returns an alertPipeline that translates alarms and
-// heartbeats with translator and sends them with delivery, and registers its
+// heartbeats with translator and sends them with sender, and registers its
 // metrics with reg. Alarms are flushed once a batch reaches flushThreshold or
 // at each flushInterval.
-func newAlertPipeline(translator *alertTranslator, delivery *alertDelivery, flushThreshold int, flushInterval time.Duration, logAlarms bool, logger *slog.Logger, reg prometheus.Registerer) *alertPipeline {
+func newAlertPipeline(translator *alertTranslator, sender alertSender, flushThreshold int, flushInterval time.Duration, logAlarms bool, logger *slog.Logger, reg prometheus.Registerer) *alertPipeline {
 	p := &alertPipeline{
 		translator: translator,
-		delivery:   delivery,
+		sender:     sender,
 		logger:     logger,
 		logAlarms:  logAlarms,
 		alarmTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -120,14 +128,15 @@ func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
 	p.batcher.add(wrapped)
 }
 
-// heartbeat sends the alert for a heartbeat received at now.
+// heartbeat sends the alert for a heartbeat received at now, which stops if
+// ctx is cancelled.
 //
 // The alert is sent synchronously, so a slow Alertmanager holds up the
 // heartbeat stream of that Horizon instance. This is deliberate: Horizon
 // sends a heartbeat every 60 seconds on an asynchronous stream, and sending
 // times out after 5 seconds, so a backlog cannot build up and the only effect
 // is a heartbeat alert arriving a few seconds late.
-func (p *alertPipeline) heartbeat(hb *pb.HeartBeat, now time.Time) {
+func (p *alertPipeline) heartbeat(ctx context.Context, hb *pb.HeartBeat, now time.Time) {
 	id := hb.GetMonitoringInstance().GetInstanceId()
 	name := hb.GetMonitoringInstance().GetInstanceName()
 
@@ -147,13 +156,14 @@ func (p *alertPipeline) heartbeat(hb *pb.HeartBeat, now time.Time) {
 	p.logger.Debug("adding message to list", "message", alert)
 
 	// send to alertmanager at the end
-	if err := p.delivery.send([]*postableAlert{alert}); err != nil {
+	if err := p.sender.send(ctx, []*postableAlert{alert}); err != nil {
 		p.logger.Error("error during send", "error", err)
 	}
 }
 
-// flush translates a batch of alarms and sends the resulting alerts
-func (p *alertPipeline) flush(alarms []instanceAlarm) {
+// flush translates a batch of alarms and sends the resulting alerts, which
+// stops if ctx is cancelled
+func (p *alertPipeline) flush(ctx context.Context, alarms []instanceAlarm) {
 	list := make([]*postableAlert, 0)
 	for _, ia := range alarms {
 		alarm := ia.alarm
@@ -207,7 +217,7 @@ func (p *alertPipeline) flush(alarms []instanceAlarm) {
 	}
 
 	// send to alertmanager at the end
-	if err := p.delivery.send(list); err != nil {
+	if err := p.sender.send(ctx, list); err != nil {
 		p.logger.Error("error during send", "error", err)
 	}
 }

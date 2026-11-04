@@ -12,11 +12,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// recordingFlush records the batches it is given and signals each one on
-// flushed
+// recordingFlush records the batches it is given, and the error of the
+// context each was flushed with, and signals each one on flushed
 type recordingFlush struct {
 	mu      sync.Mutex
 	batches [][]instanceAlarm
+	ctxErrs []error
 	flushed chan struct{}
 }
 
@@ -24,9 +25,10 @@ func newRecordingFlush() *recordingFlush {
 	return &recordingFlush{flushed: make(chan struct{}, 100)}
 }
 
-func (r *recordingFlush) flush(batch []instanceAlarm) {
+func (r *recordingFlush) flush(ctx context.Context, batch []instanceAlarm) {
 	r.mu.Lock()
 	r.batches = append(r.batches, batch)
+	r.ctxErrs = append(r.ctxErrs, ctx.Err())
 	r.mu.Unlock()
 
 	r.flushed <- struct{}{}
@@ -43,6 +45,21 @@ func (r *recordingFlush) sizes() []int {
 	}
 
 	return sizes
+}
+
+// cancelled returns how many batches were flushed with a cancelled context
+func (r *recordingFlush) cancelled() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	n := 0
+	for _, err := range r.ctxErrs {
+		if err != nil {
+			n++
+		}
+	}
+
+	return n
 }
 
 // wait waits for a batch to be flushed, failing the test after timeout. In a
@@ -222,6 +239,9 @@ func TestAlarmBatcherShutdownFlushesBatch(t *testing.T) {
 		if got := r.sizes(); len(got) != 1 || got[0] != 3 {
 			t.Errorf("flushed %v, want the batch of 3 flushed on shutdown", got)
 		}
+		if got := r.cancelled(); got != 0 {
+			t.Errorf("%d batches flushed with a cancelled context, want none so the alerts are still sent", got)
+		}
 	})
 }
 
@@ -231,9 +251,9 @@ func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
 	// hold the first flush so later updates wait in the queue
 	gate := make(chan struct{})
 	var once sync.Once
-	flush := func(batch []instanceAlarm) {
+	flush := func(ctx context.Context, batch []instanceAlarm) {
 		once.Do(func() { <-gate })
-		r.flush(batch)
+		r.flush(ctx, batch)
 	}
 
 	reg := prometheus.NewRegistry()
@@ -254,6 +274,11 @@ func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
 	}
 	if total != 6 {
 		t.Errorf("flushed %v, want all 6 alarms flushed on shutdown", r.sizes())
+	}
+
+	// the first flush was in progress when the batcher was stopped
+	if got := r.cancelled(); got != 0 {
+		t.Errorf("%d batches flushed with a cancelled context, want none so the alerts are still sent", got)
 	}
 	if got := metricValue(t, reg, "onmsgrpc_alarm_queue_depth"); got != 0 {
 		t.Errorf("queueDepth = %v, want 0 after shutdown", got)

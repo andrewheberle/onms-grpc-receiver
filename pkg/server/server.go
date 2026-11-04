@@ -187,7 +187,7 @@ func (s *ServiceSyncServer) HeartBeatUpdate(stream grpc.BidiStreamingServer[pb.H
 			return err
 		}
 
-		s.pipeline.heartbeat(in, time.Now())
+		s.pipeline.heartbeat(stream.Context(), in, time.Now())
 	}
 }
 

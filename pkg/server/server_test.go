@@ -44,6 +44,10 @@ type heartbeatStream struct {
 	heartbeats []*pb.HeartBeat
 }
 
+func (h *heartbeatStream) Context() context.Context {
+	return context.Background()
+}
+
 func (h *heartbeatStream) Recv() (*pb.HeartBeat, error) {
 	if len(h.heartbeats) == 0 {
 		return nil, io.EOF
@@ -308,7 +312,7 @@ func TestServiceSyncServerMetrics(t *testing.T) {
 
 	// metrics with labels only have series once they are used
 	now := time.Now()
-	s.pipeline.heartbeat(pb.HeartBeat_builder{
+	s.pipeline.heartbeat(context.Background(), pb.HeartBeat_builder{
 		MonitoringInstance: pb.MonitoringInstance_builder{InstanceId: "test", InstanceName: "OpenNMS"}.Build(),
 	}.Build(), now)
 	s.pipeline.alarmUpdate(pb.AlarmUpdateList_builder{InstanceId: "test", Snapshot: true}.Build(), now)

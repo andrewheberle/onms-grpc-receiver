@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
 	"sync"
 	"time"
 
@@ -77,18 +78,26 @@ type alertDelivery struct {
 
 // alertmanagerDiscovery finds the Alertmanagers to send alerts to
 type alertmanagerDiscovery interface {
-	// alertmanagers returns the base URL of every Alertmanager currently
-	// known
-	alertmanagers() ([]string, error)
+	// alertmanagers returns the alerts URL of every Alertmanager currently
+	// known, which the alerts are posted to
+	alertmanagers(ctx context.Context) ([]string, error)
 }
+
+const (
+	// requestTimeout is how long a single request to an Alertmanager may
+	// take
+	requestTimeout = 5 * time.Second
+
+	// maxErrorBody is how much of the body of an error response from an
+	// Alertmanager is included in the error
+	maxErrorBody = 1024
+)
 
 // newAlertDelivery returns an alertDelivery that sends to the Alertmanagers
 // found by discovery, adding headers to every request, and registers its
 // metrics with reg
 func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger, reg prometheus.Registerer) *alertDelivery {
-	client := &http.Client{
-		Timeout: time.Second * 5,
-	}
+	client := &http.Client{}
 	if headers != nil {
 		client.Transport = &customTransport{
 			Headers: headers,
@@ -119,72 +128,81 @@ func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string
 	return d
 }
 
-// send posts alerts to every Alertmanager currently known. An error is
-// returned only if the Alertmanagers could not be found or the alerts could
-// not be encoded; failures to send to an Alertmanager are logged and counted.
-func (d *alertDelivery) send(alerts []*postableAlert) error {
+// send posts alerts to every Alertmanager currently known, in parallel. The
+// error returned joins the failure of every Alertmanager that did not accept
+// the alerts, or reports that the Alertmanagers could not be found or the
+// alerts could not be encoded.
+func (d *alertDelivery) send(ctx context.Context, alerts []*postableAlert) error {
 	if len(alerts) == 0 {
 		return nil
 	}
 
-	ams, err := d.discovery.alertmanagers()
+	urls, err := d.discovery.alertmanagers(ctx)
 	if err != nil {
 		d.lookupErrors.Inc()
-		return err
+		return fmt.Errorf("finding alertmanagers: %w", err)
 	}
 
 	payload, err := json.Marshal(alerts)
 	if err != nil {
-		return err
+		return fmt.Errorf("encoding alerts: %w", err)
 	}
 
 	logger := d.logger.With("count", len(alerts))
 
+	errs := make([]error, len(urls))
 	var wg sync.WaitGroup
-	for _, am := range ams {
-		wg.Add(1)
-		go func(base string) {
-			defer wg.Done()
-
-			url, err := url.JoinPath(base, alertsPath)
-			if err != nil {
-				logger.Warn("error creating alertmanager url", "alertmanager", base, "error", err)
-				d.total.WithLabelValues(base).Inc()
-				d.errors.WithLabelValues(base).Inc()
-				return
-			}
-
-			d.total.WithLabelValues(url).Inc()
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-			defer cancel()
-
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-			if err != nil {
-				logger.Warn("error creating request", "url", url, "error", err)
-				d.errors.WithLabelValues(url).Inc()
-				return
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := d.client.Do(req)
-			if err != nil {
-				logger.Warn("error sending to alertmanager", "url", url, "error", err)
-				d.errors.WithLabelValues(url).Inc()
-				return
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				logger.Warn("bad status code from alertmanager", "url", url, "status", resp.Status)
-				d.errors.WithLabelValues(url).Inc()
-				return
-			}
-
-			logger.Info("sent to alertmanager", "url", url, "status", resp.Status)
-		}(am)
+	for i, u := range urls {
+		wg.Go(func() {
+			errs[i] = d.post(ctx, u, payload, logger)
+		})
 	}
 	wg.Wait()
+
+	return errors.Join(errs...)
+}
+
+// post sends the encoded alerts in payload to the Alertmanager alerts URL u,
+// counting the attempt and any failure
+func (d *alertDelivery) post(ctx context.Context, u string, payload []byte, logger *slog.Logger) error {
+	d.total.WithLabelValues(u).Inc()
+
+	err := d.do(ctx, u, payload, logger)
+	if err != nil {
+		d.errors.WithLabelValues(u).Inc()
+	}
+
+	return err
+}
+
+// do makes a single request to post payload to the Alertmanager alerts URL u
+func (d *alertDelivery) do(ctx context.Context, u string, payload []byte, logger *slog.Logger) error {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("creating request for alertmanager %s: %w", u, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("sending to alertmanager: %w", err)
+	}
+	defer func() {
+		// read what remains of the body so the connection can be reused
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBody))
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+
+		return fmt.Errorf("alertmanager %s returned %s: %s", u, resp.Status, bytes.TrimSpace(body))
+	}
+
+	logger.Info("sent to alertmanager", "url", u, "status", resp.Status)
 
 	return nil
 }
@@ -192,28 +210,34 @@ func (d *alertDelivery) send(alerts []*postableAlert) error {
 // noDiscovery finds no Alertmanagers, so nothing is sent
 type noDiscovery struct{}
 
-func (noDiscovery) alertmanagers() ([]string, error) {
+func (noDiscovery) alertmanagers(context.Context) ([]string, error) {
 	return nil, nil
 }
 
-// staticDiscovery is a fixed list of Alertmanagers
+// staticDiscovery is a fixed list of Alertmanager alerts URLs
 type staticDiscovery []string
 
-// newStaticDiscovery returns a staticDiscovery for the given base URLs,
-// returning an error if any are invalid
+// newStaticDiscovery returns a staticDiscovery for the given Alertmanager
+// base URLs, returning an error if any are invalid
 func newStaticDiscovery(urls []string) (staticDiscovery, error) {
+	d := make(staticDiscovery, 0, len(urls))
 	for _, u := range urls {
-		if _, err := url.JoinPath(u, alertsPath); err != nil {
-			return nil, err
+		alertsURL, err := url.JoinPath(u, alertsPath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid alertmanager URL %q: %w", u, err)
 		}
+		d = append(d, alertsURL)
 	}
 
-	return slices.Clone(urls), nil
-}
-
-func (d staticDiscovery) alertmanagers() ([]string, error) {
 	return d, nil
 }
+
+func (d staticDiscovery) alertmanagers(context.Context) ([]string, error) {
+	return d, nil
+}
+
+// srvLookupTimeout is how long a lookup of the SRV record may take
+const srvLookupTimeout = 2 * time.Second
 
 // srvDiscovery finds Alertmanagers from a DNS SRV record. Results are cached
 // for the TTL, then for up to another TTL the cached results are returned
@@ -252,9 +276,9 @@ func newSRVDiscovery(scheme, name string, ttl time.Duration, logger *slog.Logger
 	}
 }
 
-func (d *srvDiscovery) alertmanagers() ([]string, error) {
+func (d *srvDiscovery) alertmanagers(ctx context.Context) ([]string, error) {
 	if d.ttl == 0 {
-		return d.resolve()
+		return d.resolve(ctx)
 	}
 
 	d.mu.Lock()
@@ -275,7 +299,7 @@ func (d *srvDiscovery) alertmanagers() ([]string, error) {
 	d.mu.Unlock()
 
 	// cache expired beyond stale window, so resolve now
-	urls, err := d.resolve()
+	urls, err := d.resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -287,9 +311,11 @@ func (d *srvDiscovery) alertmanagers() ([]string, error) {
 	return urls, nil
 }
 
-// refresh looks up the SRV record again in the background
+// refresh looks up the SRV record again in the background. The lookup is not
+// tied to the send that started it, which may finish first, but is bounded
+// by srvLookupTimeout.
 func (d *srvDiscovery) refresh() {
-	urls, err := d.resolve()
+	urls, err := d.resolve(context.Background())
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -311,19 +337,25 @@ func (d *srvDiscovery) store(urls []string) {
 	d.resolving = false
 }
 
-// resolve looks up the SRV record and returns the Alertmanager base URLs
-func (d *srvDiscovery) resolve() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+// resolve looks up the SRV record and returns the Alertmanager alerts URLs,
+// taking at most srvLookupTimeout
+func (d *srvDiscovery) resolve(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, srvLookupTimeout)
 	defer cancel()
 
 	addrs, err := d.lookup(ctx, d.name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("looking up SRV record %s: %w", d.name, err)
 	}
 
 	urls := make([]string, 0, len(addrs))
 	for _, addr := range addrs {
-		urls = append(urls, fmt.Sprintf("%s://%s", d.scheme, net.JoinHostPort(addr.Target, fmt.Sprint(addr.Port))))
+		base := fmt.Sprintf("%s://%s", d.scheme, net.JoinHostPort(addr.Target, fmt.Sprint(addr.Port)))
+		alertsURL, err := url.JoinPath(base, alertsPath)
+		if err != nil {
+			return nil, fmt.Errorf("building alertmanager URL from SRV record %s: %w", d.name, err)
+		}
+		urls = append(urls, alertsURL)
 	}
 
 	return urls, nil
