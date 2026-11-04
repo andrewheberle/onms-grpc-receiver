@@ -209,6 +209,7 @@ func TestNewServiceSyncServerRejectsConfig(t *testing.T) {
 		{"reserved header", []ServiceSyncServerOption{WithHeaders(map[string]string{"Host": "am"})}, `invalid header "Host": Host cannot be set`},
 		{"URL map with query", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon:8980/opennms/?x=1"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon:8980/opennms/": must not have a query`},
 		{"unparseable URL map", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://horizon 1:8980/opennms/"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon 1:8980/opennms/": invalid character " " in host name`},
+		{"URL map with credentials", []ServiceSyncServerOption{WithURLMapping(map[string]string{"6f8a7c1e-uuid": "http://admin:secret@horizon:8980/opennms/"})}, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon:8980/opennms/": must not have credentials`},
 		{"URL map with empty instance ID", []ServiceSyncServerOption{WithURLMapping(map[string]string{"": "http://horizon:8980/opennms/"})}, "invalid URL map: an instance ID is empty"},
 		{"flush threshold", []ServiceSyncServerOption{WithFlushThreshold(0)}, "invalid flush threshold 0: must be at least 1"},
 		{"flush interval", []ServiceSyncServerOption{WithFlushInterval(0)}, "invalid flush interval 0s: must be greater than zero"},

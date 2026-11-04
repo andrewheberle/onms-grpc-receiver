@@ -370,7 +370,7 @@ func newStaticDiscovery(urls []string) (staticDiscovery, error) {
 	var problems []error
 	d := make(staticDiscovery, 0, len(urls))
 	for _, u := range urls {
-		if err := checkHTTPURL("alertmanager URL", u, true); err != nil {
+		if err := checkHTTPURL("alertmanager URL", u, false); err != nil {
 			problems = append(problems, err)
 			continue
 		}

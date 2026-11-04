@@ -10,35 +10,40 @@ import (
 
 func TestCheckHTTPURL(t *testing.T) {
 	tests := []struct {
-		name       string
-		url        string
-		allowQuery bool
-		wantErr    string
+		name    string
+		url     string
+		link    bool
+		wantErr string
 	}{
 		{"http", "http://am:9093", false, ""},
 		{"https with path", "https://am:9093/prefix/", false, ""},
+		{"link", "https://horizon:8980/opennms/", true, ""},
 		{"credentials", "https://noc:secret@am:9093", false, ""},
+		{"credentials in link", "https://noc:secret@horizon:8980/opennms/", true, `"https://horizon:8980/opennms/": must not have credentials`},
+		{"user name in link", "https://noc@horizon:8980/opennms/", true, "must not have credentials"},
+		{"empty user name in link", "https://@horizon:8980/opennms/", true, "must not have credentials"},
 		{"upper case scheme", "HTTP://am:9093", false, ""},
-		{"query allowed", "http://am:9093/?token=x", true, ""},
-		{"query not allowed", "http://am:9093/?token=x", false, "must not have a query"},
-		{"empty query not allowed", "http://am:9093/?", false, "must not have a query"},
+		{"query", "http://am:9093/?token=x", false, ""},
+		{"query in link", "http://horizon:8980/opennms/?token=x", true, "must not have a query"},
+		{"empty query in link", "http://horizon:8980/opennms/?", true, "must not have a query"},
 		{"no scheme", "am:9093", false, "must be http or https"},
 		{"host as scheme", "localhost:9093", false, "must be http or https"},
 		{"empty", "", false, "must be http or https"},
 		{"other scheme", "ftp://am:9093", false, "must be http or https"},
 		{"no host", "http://", false, "must have a host"},
 		{"no scheme with host", "//am:9093", false, "must be http or https"},
-		{"fragment", "http://am:9093/#x", true, "must not have a fragment"},
-		{"empty fragment", "http://am:9093/#", true, "must not have a fragment"},
+		{"fragment", "http://am:9093/#x", false, "must not have a fragment"},
+		{"empty fragment", "http://am:9093/#", false, "must not have a fragment"},
+		{"fragment in link", "http://horizon:8980/opennms/#x", true, "must not have a fragment"},
 		{"unparseable", "http://am 1:9093", false, "invalid character"},
 		{"credentials hidden", "ftp://noc:secret@am:9093", false, `"ftp://am:9093"`},
 		{"unparseable credentials hidden", "http://noc:secret@am 1:9093", false, `"http://am 1:9093"`},
-		{"query hidden", "http://am:9093/?token=secret#x", true, `"http://am:9093/": must not have a fragment`},
+		{"query hidden", "http://am:9093/?token=secret#x", false, `"http://am:9093/": must not have a fragment`},
 		{"opaque credentials hidden", "noc:secret@am:9093", false, `"noc:am:9093": must be http or https`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkHTTPURL("test URL", tt.url, tt.allowQuery)
+			err := checkHTTPURL("test URL", tt.url, tt.link)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("checkHTTPURL() error = %v", err)
@@ -48,7 +53,7 @@ func TestCheckHTTPURL(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("checkHTTPURL() error = %v, want containing %q", err, tt.wantErr)
 			}
-			if strings.Contains(err.Error(), "secret") {
+			if err != nil && strings.Contains(err.Error(), "secret") {
 				t.Errorf("checkHTTPURL() error = %v, want the password redacted", err)
 			}
 		})
