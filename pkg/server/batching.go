@@ -13,7 +13,7 @@ import (
 // either once the batch reaches the flush threshold or at each flush
 // interval. A single worker flushes, so a slow flush holds up the queue.
 type alarmBatcher struct {
-	flush          func([]instanceAlarm)
+	flush          func(context.Context, []instanceAlarm)
 	flushThreshold int
 	flushInterval  time.Duration
 	logger         *slog.Logger
@@ -33,7 +33,7 @@ type alarmBatcher struct {
 
 // newAlarmBatcher returns an alarmBatcher that holds up to queueSize alarm
 // updates and passes each batch to flush, and registers its metrics with reg
-func newAlarmBatcher(flush func([]instanceAlarm), queueSize, flushThreshold int, flushInterval time.Duration, logger *slog.Logger, reg prometheus.Registerer) *alarmBatcher {
+func newAlarmBatcher(flush func(context.Context, []instanceAlarm), queueSize, flushThreshold int, flushInterval time.Duration, logger *slog.Logger, reg prometheus.Registerer) *alarmBatcher {
 	b := &alarmBatcher{
 		flush:          flush,
 		flushThreshold: flushThreshold,
@@ -81,8 +81,14 @@ func (b *alarmBatcher) add(alarms []instanceAlarm) {
 }
 
 // run batches and flushes queued alarms until ctx is cancelled, when it stops
-// queueing alarm updates and flushes everything already queued
+// queueing alarm updates and flushes everything already queued.
+//
+// Every flush is given a context that is not cancelled with ctx, so a flush
+// in progress when ctx is cancelled, and the final flush on shutdown, still
+// send their alerts.
 func (b *alarmBatcher) run(ctx context.Context) {
+	flushCtx := context.WithoutCancel(ctx)
+
 	var batch []instanceAlarm
 	timer := time.NewTimer(b.flushInterval)
 	defer timer.Stop()
@@ -102,7 +108,7 @@ func (b *alarmBatcher) run(ctx context.Context) {
 
 			if len(batch) > 0 {
 				b.logger.Info("batchWorker: flushing on shutdown", "alarmcount", len(batch))
-				b.flush(batch)
+				b.flush(flushCtx, batch)
 			}
 			b.queueDepth.Set(0)
 			return
@@ -114,7 +120,7 @@ func (b *alarmBatcher) run(ctx context.Context) {
 			// so a batch may be larger than the threshold
 			if len(batch) >= b.flushThreshold {
 				b.logger.Info("batchWorker: flushing on size", "alarmcount", len(batch))
-				b.flush(batch)
+				b.flush(flushCtx, batch)
 				batch = nil
 				b.queueDepth.Set(float64(len(b.queue)))
 
@@ -127,7 +133,7 @@ func (b *alarmBatcher) run(ctx context.Context) {
 		case <-timer.C:
 			if len(batch) > 0 {
 				b.logger.Info("batchWorker: flushing on timer", "alarmcount", len(batch))
-				b.flush(batch)
+				b.flush(flushCtx, batch)
 				batch = nil
 				b.queueDepth.Set(float64(len(b.queue)))
 			}

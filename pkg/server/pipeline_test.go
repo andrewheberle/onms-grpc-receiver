@@ -3,27 +3,49 @@ package server
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
 	pb "github.com/andrewheberle/onms-grpc-receiver/pkg/spog"
-	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// newTestPipeline returns a pipeline that sends alerts to the Alertmanager at
-// amURL, with a large flush threshold and interval so alarms are only flushed
-// when the pipeline stops, and the registry its metrics are registered with
-func newTestPipeline(t *testing.T, amURL string, cfg translationConfig) (*alertPipeline, *prometheus.Registry) {
+// fakeSender is an in-memory alertSender that records the alerts it is sent,
+// and the error of the context of each send
+type fakeSender struct {
+	mu      sync.Mutex
+	alerts  []*postableAlert
+	ctxErrs []error
+}
+
+func (f *fakeSender) send(ctx context.Context, alerts []*postableAlert) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.alerts = append(f.alerts, alerts...)
+	f.ctxErrs = append(f.ctxErrs, ctx.Err())
+
+	return nil
+}
+
+// sent returns the alerts sent so far
+func (f *fakeSender) sent() []*postableAlert {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.alerts
+}
+
+// newTestPipeline returns a pipeline that sends alerts with sender, with a
+// large flush threshold and interval so alarms are only flushed when the
+// pipeline stops, and the registry its metrics are registered with
+func newTestPipeline(t *testing.T, sender alertSender, cfg translationConfig) (*alertPipeline, *prometheus.Registry) {
 	t.Helper()
 
 	reg := prometheus.NewRegistry()
-	delivery, err := deliveryConfig{discovery: discoveryStatic, urls: []string{amURL}}.build(slog.New(slog.DiscardHandler), reg)
-	if err != nil {
-		t.Fatalf("build() error = %v", err)
-	}
 
-	return newAlertPipeline(newTestTranslator(t, cfg), delivery, 1000, time.Hour, false, slog.New(slog.DiscardHandler), reg), reg
+	return newAlertPipeline(newTestTranslator(t, cfg), sender, 1000, time.Hour, false, slog.New(slog.DiscardHandler), reg), reg
 }
 
 // runPipeline runs p while feed is called, then stops it so that every queued
@@ -48,8 +70,8 @@ func runPipeline(p *alertPipeline, feed func()) {
 func TestAlertPipelineAlarmUpdate(t *testing.T) {
 	now := time.Now().Truncate(time.Millisecond)
 
-	var got []models.PostableAlert
-	p, _ := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{
+	sender := &fakeSender{}
+	p, _ := newTestPipeline(t, sender, translationConfig{
 		extraLabels:    map[string]string{"env": "prod"},
 		resolveTimeout: time.Minute * 5,
 	})
@@ -70,14 +92,15 @@ func TestAlertPipelineAlarmUpdate(t *testing.T) {
 		}.Build(), now)
 	})
 
+	got := sender.sent()
 	if len(got) != 1 {
 		t.Fatalf("sent %d alerts, want 1", len(got))
 	}
 	if got[0].Labels["alarm_id"] != "25" || got[0].Labels["env"] != "prod" || got[0].Labels["instance_name"] != "OpenNMS" {
 		t.Errorf("labels = %v, want alarm_id 25, env prod and instance_name OpenNMS", got[0].Labels)
 	}
-	if endsAt, want := time.Time(got[0].EndsAt), now.Add(time.Minute*5); !endsAt.Equal(want) {
-		t.Errorf("EndsAt = %v, want %v", endsAt, want)
+	if want := now.Add(time.Minute * 5); !got[0].EndsAt.Equal(want) {
+		t.Errorf("EndsAt = %v, want %v", got[0].EndsAt, want)
 	}
 }
 
@@ -114,8 +137,7 @@ func TestAlertPipelineLastSnapshot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got []models.PostableAlert
-			p, reg := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{})
+			p, reg := newTestPipeline(t, &fakeSender{}, translationConfig{})
 
 			runPipeline(p, func() {
 				for _, u := range tt.updates {
@@ -141,12 +163,12 @@ func TestAlertPipelineLastSnapshot(t *testing.T) {
 func TestAlertPipelineHeartbeat(t *testing.T) {
 	now := time.Now().Truncate(time.Millisecond)
 
-	var got []models.PostableAlert
-	p, _ := newTestPipeline(t, fakeAlertmanager(t, &got), translationConfig{
+	sender := &fakeSender{}
+	p, _ := newTestPipeline(t, sender, translationConfig{
 		extraLabels: map[string]string{"env": "prod"},
 	})
 
-	p.heartbeat(pb.HeartBeat_builder{
+	p.heartbeat(context.Background(), pb.HeartBeat_builder{
 		MonitoringInstance: pb.MonitoringInstance_builder{
 			InstanceId:   "6f8a7c1e-uuid",
 			InstanceName: "OpenNMS",
@@ -154,13 +176,56 @@ func TestAlertPipelineHeartbeat(t *testing.T) {
 		Message: "heartbeat",
 	}.Build(), now)
 
+	got := sender.sent()
 	if len(got) != 1 {
 		t.Fatalf("sent %d alerts, want 1", len(got))
 	}
 	if got[0].Labels["alertname"] != "OpenNMSHeartbeat" || got[0].Labels["env"] != "prod" {
 		t.Errorf("labels = %v, want alertname OpenNMSHeartbeat and env prod", got[0].Labels)
 	}
-	if startsAt := time.Time(got[0].StartsAt); !startsAt.Equal(now) {
-		t.Errorf("StartsAt = %v, want %v", startsAt, now)
+	if !got[0].StartsAt.Equal(now) {
+		t.Errorf("StartsAt = %v, want %v", got[0].StartsAt, now)
+	}
+}
+
+// TestAlertPipelineSendContext checks which context alerts are sent with: a
+// heartbeat is sent with the context it was received with, so it stops with
+// its stream, while alarms flushed as the pipeline stops are still sent
+func TestAlertPipelineSendContext(t *testing.T) {
+	now := time.Now()
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name          string
+		feed          func(p *alertPipeline)
+		wantCancelled bool
+	}{
+		{"heartbeat with cancelled context", func(p *alertPipeline) {
+			p.heartbeat(cancelled, pb.HeartBeat_builder{}.Build(), now)
+		}, true},
+		{"alarms flushed when stopping", func(p *alertPipeline) {
+			runPipeline(p, func() {
+				p.alarmUpdate(pb.AlarmUpdateList_builder{
+					Alarms: []*pb.Alarm{fullAlarm(now)},
+				}.Build(), now)
+			})
+		}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sender := &fakeSender{}
+			p, _ := newTestPipeline(t, sender, translationConfig{resolveTimeout: time.Minute * 5})
+
+			tt.feed(p)
+
+			if len(sender.ctxErrs) != 1 {
+				t.Fatalf("sent %d times, want 1", len(sender.ctxErrs))
+			}
+			if got := sender.ctxErrs[0] != nil; got != tt.wantCancelled {
+				t.Errorf("sent with cancelled context = %v, want %v", got, tt.wantCancelled)
+			}
+		})
 	}
 }
