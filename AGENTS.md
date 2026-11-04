@@ -19,6 +19,7 @@ Run these before considering any change complete:
 
 ## Code conventions
 - Go version: [1.26], per `go.mod`. Don't bump it unless asked.
+- Go toolchain: the `toolchain` line in `go.mod` pins the Go used by CI and releases (see `docs/adr/0005`). Renovate updates it; don't change it by hand unless asked. Moving the `go` line changes `GODEBUG` defaults, so it only moves when asked, after reviewing that Go version's `GODEBUG` changes.
 - Logging: use `log/slog` with structured key/value attributes. No `fmt.Println` or `log.Printf` in service code.
 - Errors: wrap with `fmt.Errorf("doing x: %w", err)`. Return errors rather than logging and continuing, unless at the top level or the parent contains a `*slog.Logger`.
 - Context: pass `context.Context` as the first parameter for anything doing I/O; respect cancellation.
