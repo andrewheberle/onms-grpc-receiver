@@ -11,9 +11,11 @@ import (
 )
 
 // checkHTTPURL returns a problem with u as the URL of what, or nil if it is
-// an http or https URL with a host and no fragment. A query is only allowed
-// if allowQuery is set. The problem shows u as safeURL does.
-func checkHTTPURL(what, u string, allowQuery bool) error {
+// an http or https URL with a host and no fragment. If link is set, u is a
+// link that people open from an alert, so it must not have credentials, and
+// it must not have a query, as the receiver sets the query of the link. The
+// problem shows u as safeURL does.
+func checkHTTPURL(what, u string, link bool) error {
 	parsed, err := url.Parse(u)
 	if err != nil {
 		var urlErr *url.Error
@@ -32,7 +34,9 @@ func checkHTTPURL(what, u string, allowQuery bool) error {
 		problem = "must have a host"
 	case strings.Contains(u, "#"):
 		problem = "must not have a fragment"
-	case !allowQuery && (parsed.RawQuery != "" || parsed.ForceQuery):
+	case link && parsed.User != nil:
+		problem = "must not have credentials"
+	case link && (parsed.RawQuery != "" || parsed.ForceQuery):
 		problem = "must not have a query"
 	default:
 		return nil

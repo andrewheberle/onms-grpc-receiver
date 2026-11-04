@@ -315,9 +315,14 @@ onms-grpc-receiver spog --map.url "uuid-of-horizon-instance=http://horizon:8980/
 
 Based on the above an alert from `uuid-of-horizon-instance` with an alert ID `25` would result in a URL of `http://horizon:8980/opennms/alarm/detail.htm?id=25`
 
-The receiver will not start if an instance ID is empty, or a URL is not an
-`http` or `https` URL with a host, or has a query string or fragment, as the
-alarm ID is added as the query string.
+The receiver will not start if an instance ID is empty, or a URL:
+
+* Is not an `http` or `https` URL with a host.
+* Has credentials (`http://user:password@horizon:8980/opennms/`), as the URL
+  is a link that people open from an alert, and OpenNMS does not accept
+  credentials in it.
+* Has a query string or fragment, as the alarm ID is added as the query
+  string.
 
 ### Handling OpenNMS restarts
 

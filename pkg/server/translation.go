@@ -155,7 +155,7 @@ func parseURLMap(m map[string]string) (map[string]string, error) {
 			continue
 		}
 
-		if err := checkHTTPURL(fmt.Sprintf("URL for instance %q in URL map", id), m[id], false); err != nil {
+		if err := checkHTTPURL(fmt.Sprintf("URL for instance %q in URL map", id), m[id], true); err != nil {
 			problems = append(problems, err)
 			continue
 		}

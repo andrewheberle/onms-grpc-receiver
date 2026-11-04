@@ -37,6 +37,8 @@ func TestSpogRejectsBuiltinNames(t *testing.T) {
 		{"alertmanager url flag", []string{"--alertmanager.url", "localhost:9093"}, nil, `invalid alertmanager URL "localhost:9093": must be http or https`},
 		{"alertmanager scheme flag", []string{"--alertmanager.srv", "_alertmanager._tcp.example.com", "--alertmanager.scheme", "htps"}, nil, `invalid alertmanager scheme "htps"`},
 		{"map url env var", nil, map[string]string{"ONMS_GRPC_MAP_URL": "6f8a7c1e-uuid=http://horizon:8980/opennms/#alarms"}, "must not have a fragment"},
+		{"map url credentials flag", []string{"--map.url", "6f8a7c1e-uuid=http://admin:secret@horizon:8980/opennms/"}, nil, `invalid URL for instance "6f8a7c1e-uuid" in URL map "http://horizon:8980/opennms/": must not have credentials`},
+		{"map url credentials env var", nil, map[string]string{"ONMS_GRPC_MAP_URL": "6f8a7c1e-uuid=https://admin@horizon:8980/opennms/"}, "must not have credentials"},
 		{"every problem at once", []string{"--metrics.path", "metrics", "--resolve.hold", "-1m"}, nil, `invalid --metrics.path "metrics": must start with "/"` + "\ninvalid resolve hold -1m0s"},
 	}
 	for _, tt := range tests {
