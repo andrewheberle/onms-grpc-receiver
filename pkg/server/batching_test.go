@@ -111,7 +111,7 @@ func runBatcher(t *testing.T, b *alarmBatcher) (context.CancelFunc, <-chan struc
 func TestAlarmBatcherFlushThreshold(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 5, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+		b := must(newAlarmBatcher(r.flush, 10, 5, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 		runBatcher(t, b)
 
 		b.add(update(3))
@@ -128,7 +128,7 @@ func TestAlarmBatcherFlushThreshold(t *testing.T) {
 func TestAlarmBatcherFlushThresholdRestartsInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 2, time.Millisecond*200, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+		b := must(newAlarmBatcher(r.flush, 10, 2, time.Millisecond*200, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 		runBatcher(t, b)
 
 		// flush on the threshold just before the interval would have fired
@@ -154,7 +154,7 @@ func TestAlarmBatcherFlushThresholdRestartsInterval(t *testing.T) {
 func TestAlarmBatcherFlushInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*20, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+		b := must(newAlarmBatcher(r.flush, 10, 100, time.Millisecond*20, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 		runBatcher(t, b)
 
 		b.add(update(3))
@@ -169,7 +169,7 @@ func TestAlarmBatcherFlushInterval(t *testing.T) {
 func TestAlarmBatcherFlushIntervalEmpty(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 100, time.Millisecond*10, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+		b := must(newAlarmBatcher(r.flush, 10, 100, time.Millisecond*10, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 		runBatcher(t, b)
 
 		// several intervals pass with nothing to flush
@@ -184,7 +184,7 @@ func TestAlarmBatcherFlushIntervalEmpty(t *testing.T) {
 func TestAlarmBatcherQueueFull(t *testing.T) {
 	r := newRecordingFlush()
 	reg := prometheus.NewRegistry()
-	b := newAlarmBatcher(r.flush, 2, 100, time.Hour, slog.New(slog.DiscardHandler), reg)
+	b := must(newAlarmBatcher(r.flush, 2, 100, time.Hour, slog.New(slog.DiscardHandler), reg))(t)
 
 	// nothing takes from the queue while the batcher is not running
 	b.add(update(1))
@@ -206,7 +206,7 @@ func TestAlarmBatcherQueueDepthAfterFlush(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
 		reg := prometheus.NewRegistry()
-		b := newAlarmBatcher(r.flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler), reg)
+		b := must(newAlarmBatcher(r.flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler), reg))(t)
 		runBatcher(t, b)
 
 		b.add(update(1))
@@ -222,7 +222,7 @@ func TestAlarmBatcherQueueDepthAfterFlush(t *testing.T) {
 func TestAlarmBatcherShutdownFlushesBatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRecordingFlush()
-		b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+		b := must(newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 		cancel, done := runBatcher(t, b)
 
 		b.add(update(3))
@@ -257,7 +257,7 @@ func TestAlarmBatcherShutdownFlushesQueue(t *testing.T) {
 	}
 
 	reg := prometheus.NewRegistry()
-	b := newAlarmBatcher(flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler), reg)
+	b := must(newAlarmBatcher(flush, 10, 1, time.Hour, slog.New(slog.DiscardHandler), reg))(t)
 	cancel, done := runBatcher(t, b)
 
 	b.add(update(1))
@@ -312,7 +312,7 @@ func TestAlarmBatcherShutdownFlushTimeout(t *testing.T) {
 					mu.Unlock()
 				}
 
-				b := newAlarmBatcher(flush, 10, tt.flushThreshold, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+				b := must(newAlarmBatcher(flush, 10, tt.flushThreshold, time.Hour, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 				cancel, done := runBatcher(t, b)
 
 				b.add(update(1))
@@ -335,7 +335,7 @@ func TestAlarmBatcherShutdownFlushTimeout(t *testing.T) {
 func TestAlarmBatcherAddAfterShutdown(t *testing.T) {
 	r := newRecordingFlush()
 	reg := prometheus.NewRegistry()
-	b := newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler), reg)
+	b := must(newAlarmBatcher(r.flush, 10, 100, time.Hour, slog.New(slog.DiscardHandler), reg))(t)
 	cancel, done := runBatcher(t, b)
 
 	cancel()

@@ -88,7 +88,7 @@ func TestAlertDeliverySend(t *testing.T) {
 	am2 := newRecordingAlertmanager(t, http.StatusOK)
 
 	reg := prometheus.NewRegistry()
-	d := newAlertDelivery(newTestStaticDiscovery(t, am1.URL, am2.URL+"/prefix"), map[string]string{"X-Scope-OrgID": "noc"}, slog.New(slog.DiscardHandler), reg)
+	d := must(newAlertDelivery(newTestStaticDiscovery(t, am1.URL, am2.URL+"/prefix"), map[string]string{"X-Scope-OrgID": "noc"}, slog.New(slog.DiscardHandler), reg))(t)
 
 	if err := d.send(context.Background(), testAlerts()); err != nil {
 		t.Fatalf("send() error = %v", err)
@@ -140,7 +140,7 @@ func TestAlertDeliverySendFailure(t *testing.T) {
 			failing.body = tt.body
 
 			reg := prometheus.NewRegistry()
-			d := newAlertDelivery(newTestStaticDiscovery(t, ok.URL, failing.URL), nil, slog.New(slog.DiscardHandler), reg)
+			d := must(newAlertDelivery(newTestStaticDiscovery(t, ok.URL, failing.URL), nil, slog.New(slog.DiscardHandler), reg))(t)
 
 			err := d.send(context.Background(), testAlerts())
 			if err == nil {
@@ -177,7 +177,7 @@ func TestAlertDeliverySendCancelled(t *testing.T) {
 	am := newRecordingAlertmanager(t, http.StatusOK)
 
 	reg := prometheus.NewRegistry()
-	d := newAlertDelivery(newTestStaticDiscovery(t, am.URL), nil, slog.New(slog.DiscardHandler), reg)
+	d := must(newAlertDelivery(newTestStaticDiscovery(t, am.URL), nil, slog.New(slog.DiscardHandler), reg))(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -195,9 +195,9 @@ func TestAlertDeliverySendCancelled(t *testing.T) {
 
 func TestAlertDeliverySendLookupError(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	d := newAlertDelivery(discoveryFunc(func() ([]string, error) {
+	d := must(newAlertDelivery(discoveryFunc(func() ([]string, error) {
 		return nil, errors.New("lookup failed")
-	}), nil, slog.New(slog.DiscardHandler), reg)
+	}), nil, slog.New(slog.DiscardHandler), reg))(t)
 
 	if err := d.send(context.Background(), testAlerts()); err == nil {
 		t.Error("send() error = nil, want lookup error")
@@ -209,10 +209,10 @@ func TestAlertDeliverySendLookupError(t *testing.T) {
 
 func TestAlertDeliverySendNothing(t *testing.T) {
 	looked := false
-	d := newAlertDelivery(discoveryFunc(func() ([]string, error) {
+	d := must(newAlertDelivery(discoveryFunc(func() ([]string, error) {
 		looked = true
 		return nil, nil
-	}), nil, slog.New(slog.DiscardHandler), prometheus.NewRegistry())
+	}), nil, slog.New(slog.DiscardHandler), prometheus.NewRegistry()))(t)
 
 	if err := d.send(context.Background(), nil); err != nil {
 		t.Errorf("send() error = %v", err)
@@ -224,7 +224,7 @@ func TestAlertDeliverySendNothing(t *testing.T) {
 
 func TestNoDiscovery(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	d := newAlertDelivery(noDiscovery{}, nil, slog.New(slog.DiscardHandler), reg)
+	d := must(newAlertDelivery(noDiscovery{}, nil, slog.New(slog.DiscardHandler), reg))(t)
 
 	if err := d.send(context.Background(), testAlerts()); err != nil {
 		t.Errorf("send() error = %v", err)
@@ -241,8 +241,16 @@ func TestStaticDiscovery(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
-		{"none", []string{}, []string{}, false},
+		{"none", []string{}, nil, true},
 		{"one", []string{"http://am:9092"}, []string{"http://am:9092/api/v2/alerts"}, false},
+		{"https with credentials", []string{"https://noc:secret@am:9092"}, []string{"https://noc:secret@am:9092/api/v2/alerts"}, false},
+		{"query", []string{"http://am:9092/?token=x"}, []string{"http://am:9092/api/v2/alerts?token=x"}, false},
+		{"no scheme", []string{"am:9092"}, nil, true},
+		{"empty", []string{""}, nil, true},
+		{"no host", []string{"http://"}, nil, true},
+		{"other scheme", []string{"ftp://am:9092"}, nil, true},
+		{"fragment", []string{"http://am:9092/#x"}, nil, true},
+		{"duplicate", []string{"http://am:9092", "http://am:9092/"}, nil, true},
 		{"two", []string{"http://am1:9092", "http://am2:9092"}, []string{"http://am1:9092/api/v2/alerts", "http://am2:9092/api/v2/alerts"}, false},
 		{"prefix", []string{"http://am:9092/prefix"}, []string{"http://am:9092/prefix/api/v2/alerts"}, false},
 		{"trailing slash", []string{"http://am:9092/"}, []string{"http://am:9092/api/v2/alerts"}, false},
@@ -560,7 +568,7 @@ func newFakeDelivery(t *testing.T, transport http.RoundTripper, hosts ...string)
 	}
 
 	reg := prometheus.NewRegistry()
-	d := newAlertDelivery(newTestStaticDiscovery(t, urls...), nil, slog.New(slog.DiscardHandler), reg)
+	d := must(newAlertDelivery(newTestStaticDiscovery(t, urls...), nil, slog.New(slog.DiscardHandler), reg))(t)
 	d.client.Transport = transport
 
 	return d, reg

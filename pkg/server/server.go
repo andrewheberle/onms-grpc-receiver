@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -38,37 +37,44 @@ type ServiceSyncServer struct {
 	pb.UnimplementedNmsInventoryServiceSyncServer
 }
 
+// NewServiceSyncServer returns a ServiceSyncServer configured by opts. The
+// error returned joins every problem with the configuration, so they can all
+// be fixed at once.
 func NewServiceSyncServer(opts ...ServiceSyncServerOption) (*ServiceSyncServer, error) {
 	// set up with defaults
 	s := defaultServiceSyncServer()
 
+	var problems []error
 	for _, o := range opts {
-		if err := o(s); err != nil {
-			return nil, fmt.Errorf("error applying option: %w", err)
-		}
+		problems = append(problems, o(s))
 	}
 
 	translator, err := newAlertTranslator(s.translationConfig, s.logger)
-	if err != nil {
-		return nil, err
-	}
+	problems = append(problems, err)
 
 	// the delivery and pipeline register their own metrics
 	delivery, err := s.deliveryConfig.build(s.logger, s.registry)
-	if err != nil {
+	problems = append(problems, err)
+
+	// log every alarm when verbose, or when there is nowhere to send them
+	logAlarms := s.verbose || !s.deliveryConfig.enabled()
+
+	s.pipeline, err = newAlertPipeline(translator, delivery, s.flushThreshold, s.flushInterval, logAlarms, s.logger, s.registry)
+	problems = append(problems, err)
+
+	// register runtime metrics
+	problems = append(problems, register(s.registry,
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	))
+
+	if err := errors.Join(problems...); err != nil {
 		return nil, err
 	}
 
-	// log every alarm when verbose, or when there is nowhere to send them
-	logAlarms := s.verbose || s.deliveryConfig.discovery == discoveryNone
-
-	s.pipeline = newAlertPipeline(translator, delivery, s.flushThreshold, s.flushInterval, logAlarms, s.logger, s.registry)
-
-	// register runtime metrics
-	s.registry.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-	)
+	if !s.deliveryConfig.enabled() {
+		s.logger.Warn("no Alertmanager configured, alarms are only logged")
+	}
 
 	return s, nil
 }

@@ -21,48 +21,66 @@ import (
 // alertsPath is the Alertmanager API path that alerts are posted to
 const alertsPath = "/api/v2/alerts"
 
-// discoveryKind is how Alertmanagers are found
-type discoveryKind int
-
-const (
-	discoveryNone discoveryKind = iota
-	discoveryStatic
-	discoverySRV
-)
-
 // deliveryConfig holds the options for alert delivery until it is built
 type deliveryConfig struct {
-	discovery discoveryKind
+	// Alertmanager base URLs, if set
+	urls    []string
+	urlsSet bool
 
-	// Alertmanager base URLs for discoveryStatic
-	urls []string
-
-	// SRV record, URL scheme and cache TTL for discoverySRV
+	// SRV record and URL scheme, if set, and the cache TTL of SRV lookups
 	srvName     string
 	srvScheme   string
+	srvSet      bool
 	srvCacheTTL time.Duration
 
 	// headers added to every request
 	headers map[string]string
 }
 
-// build returns the alertDelivery for the configuration, registering its
-// metrics with reg
-func (c deliveryConfig) build(logger *slog.Logger, reg prometheus.Registerer) (*alertDelivery, error) {
-	var discovery alertmanagerDiscovery = noDiscovery{}
+// enabled reports whether any Alertmanagers are configured, as otherwise
+// alerts are not sent anywhere
+func (c deliveryConfig) enabled() bool {
+	return c.urlsSet || c.srvSet
+}
 
-	switch c.discovery {
-	case discoveryStatic:
+// build returns the alertDelivery for the configuration, registering its
+// metrics with reg. The error returned joins every problem with the
+// configuration.
+func (c deliveryConfig) build(logger *slog.Logger, reg prometheus.Registerer) (*alertDelivery, error) {
+	var problems []error
+
+	var discovery alertmanagerDiscovery = noDiscovery{}
+	switch {
+	case c.urlsSet && c.srvSet:
+		problems = append(problems, errors.New("alertmanager URLs and SRV record cannot both be set"))
+	case c.urlsSet:
 		static, err := newStaticDiscovery(c.urls)
 		if err != nil {
-			return nil, err
+			problems = append(problems, err)
 		}
 		discovery = static
-	case discoverySRV:
+	case c.srvSet:
+		if c.srvScheme != "http" && c.srvScheme != "https" {
+			problems = append(problems, fmt.Errorf("invalid alertmanager scheme %q: must be http or https", c.srvScheme))
+		}
+		if c.srvName == "" {
+			problems = append(problems, errors.New("invalid alertmanager SRV record: must not be empty"))
+		}
 		discovery = newSRVDiscovery(c.srvScheme, c.srvName, c.srvCacheTTL, logger)
 	}
 
-	return newAlertDelivery(discovery, c.headers, logger, reg), nil
+	// a TTL of zero disables caching
+	if c.srvCacheTTL < 0 {
+		problems = append(problems, fmt.Errorf("invalid SRV cache TTL %s: must not be negative", c.srvCacheTTL))
+	}
+
+	problems = append(problems, checkHeaders(c.headers)...)
+
+	if err := errors.Join(problems...); err != nil {
+		return nil, err
+	}
+
+	return newAlertDelivery(discovery, c.headers, logger, reg)
 }
 
 // alertDelivery sends alerts to every Alertmanager currently known
@@ -114,7 +132,7 @@ var retryBackoff = [maxAttempts - 1]time.Duration{500 * time.Millisecond, time.S
 // newAlertDelivery returns an alertDelivery that sends to the Alertmanagers
 // found by discovery, adding headers to every request, and registers its
 // metrics with reg
-func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger, reg prometheus.Registerer) *alertDelivery {
+func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger, reg prometheus.Registerer) (*alertDelivery, error) {
 	client := &http.Client{}
 	if headers != nil {
 		client.Transport = &customTransport{
@@ -146,9 +164,11 @@ func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string
 			Help: "Total number of errors during lookups of Alertmanagers.",
 		}),
 	}
-	reg.MustRegister(d.total, d.errors, d.retries, d.lookupErrors)
+	if err := register(reg, d.total, d.errors, d.retries, d.lookupErrors); err != nil {
+		return nil, err
+	}
 
-	return d
+	return d, nil
 }
 
 // send posts alerts to every Alertmanager currently known, in parallel, in
@@ -312,15 +332,38 @@ func (noDiscovery) alertmanagers(context.Context) ([]string, error) {
 type staticDiscovery []string
 
 // newStaticDiscovery returns a staticDiscovery for the given Alertmanager
-// base URLs, returning an error if any are invalid
+// base URLs. The error returned joins a problem for each URL that is not an
+// http or https URL with a host, has a fragment, or is listed more than once,
+// or reports that there are none.
 func newStaticDiscovery(urls []string) (staticDiscovery, error) {
+	if len(urls) == 0 {
+		return nil, errors.New("invalid alertmanager URLs: none given")
+	}
+
+	var problems []error
 	d := make(staticDiscovery, 0, len(urls))
 	for _, u := range urls {
+		if err := checkHTTPURL("alertmanager URL", u, true); err != nil {
+			problems = append(problems, err)
+			continue
+		}
+
 		alertsURL, err := url.JoinPath(u, alertsPath)
 		if err != nil {
-			return nil, fmt.Errorf("invalid alertmanager URL %q: %w", u, err)
+			problems = append(problems, fmt.Errorf("invalid alertmanager URL %q: %w", redactURL(u), err))
+			continue
+		}
+
+		// compare once joined, so "http://am" and "http://am/" are the same
+		if slices.Contains(d, alertsURL) {
+			problems = append(problems, fmt.Errorf("invalid alertmanager URL %q: listed more than once", redactURL(u)))
+			continue
 		}
 		d = append(d, alertsURL)
+	}
+
+	if err := errors.Join(problems...); err != nil {
+		return nil, err
 	}
 
 	return d, nil

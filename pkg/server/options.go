@@ -10,14 +10,21 @@ import (
 
 type ServiceSyncServerOption func(*ServiceSyncServer) error
 
+// WithLogger sets the logger, which must not be nil
 func WithLogger(logger *slog.Logger) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
+		if logger == nil {
+			return errors.New("invalid logger: must not be nil")
+		}
 		s.logger = logger
 
 		return nil
 	}
 }
 
+// WithHeaders sets headers added to every request to Alertmanager. An error
+// is returned by NewServiceSyncServer if any is not a valid HTTP header, or is
+// Host, Content-Type or Content-Length.
 func WithHeaders(headers map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.deliveryConfig.headers = headers
@@ -26,22 +33,21 @@ func WithHeaders(headers map[string]string) ServiceSyncServerOption {
 	}
 }
 
-// errAlertmanagerExclusive is returned when Alertmanagers are set both as
-// URLs and as an SRV record
-var errAlertmanagerExclusive = errors.New("alertmanager URLs and SRV record cannot both be set")
-
+// WithAlertmanagerUrl sets the base URLs of the Alertmanagers to send alerts
+// to. An error is returned by NewServiceSyncServer if the list is empty, or
+// any URL is not an http or https URL with a host, has a fragment or is listed
+// more than once, or if WithAlertManagerSrv is also used.
 func WithAlertmanagerUrl(list []string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		if s.deliveryConfig.discovery == discoverySRV {
-			return errAlertmanagerExclusive
-		}
-		s.deliveryConfig.discovery = discoveryStatic
 		s.deliveryConfig.urls = list
+		s.deliveryConfig.urlsSet = true
 
 		return nil
 	}
 }
 
+// WithSRVCacheTTL sets how long SRV lookups are cached, where zero disables
+// caching. An error is returned by NewServiceSyncServer if it is negative.
 func WithSRVCacheTTL(d time.Duration) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.deliveryConfig.srvCacheTTL = d
@@ -50,14 +56,15 @@ func WithSRVCacheTTL(d time.Duration) ServiceSyncServerOption {
 	}
 }
 
+// WithAlertManagerSrv sets the SRV record the Alertmanagers to send alerts to
+// are looked up from, and the scheme of their URLs. An error is returned by
+// NewServiceSyncServer if the scheme is not http or https, the record is
+// empty, or if WithAlertmanagerUrl is also used.
 func WithAlertManagerSrv(scheme, srv string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
-		if s.deliveryConfig.discovery == discoveryStatic {
-			return errAlertmanagerExclusive
-		}
-		s.deliveryConfig.discovery = discoverySRV
 		s.deliveryConfig.srvScheme = scheme
 		s.deliveryConfig.srvName = srv
+		s.deliveryConfig.srvSet = true
 
 		return nil
 	}
@@ -109,6 +116,10 @@ func WithSeverityMap(m map[string]string) ServiceSyncServerOption {
 	}
 }
 
+// WithURLMapping sets the base URL of each Horizon instance, keyed by instance
+// ID, used to link alerts to their alarm. An error is returned by
+// NewServiceSyncServer if any instance ID is empty, or any URL is not an http
+// or https URL with a host, or has a query or fragment.
 func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.translationConfig.urlMap = m
@@ -117,8 +128,15 @@ func WithURLMapping(m map[string]string) ServiceSyncServerOption {
 	}
 }
 
+// WithRegistry sets the registry metrics are registered with, which must not
+// be nil. An error is returned by NewServiceSyncServer if any metric cannot be
+// registered, such as when the registry already has the Go and process
+// collectors.
 func WithRegistry(reg *prometheus.Registry) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
+		if reg == nil {
+			return errors.New("invalid registry: must not be nil")
+		}
 		s.registry = reg
 
 		return nil
@@ -154,7 +172,8 @@ func WithResolveHold(d time.Duration) ServiceSyncServerOption {
 
 // WithFlushThreshold sets the number of alarms at which a batch is flushed.
 // The threshold is checked once all alarms of an update are added, so a
-// batch may hold more alarms than this.
+// batch may hold more alarms than this. An error is returned by
+// NewServiceSyncServer if it is less than one.
 func WithFlushThreshold(n int) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.flushThreshold = n
@@ -164,7 +183,8 @@ func WithFlushThreshold(n int) ServiceSyncServerOption {
 }
 
 // WithFlushInterval sets how often a batch of alarms is flushed, whatever its
-// size. The interval restarts after every flush.
+// size. The interval restarts after every flush. An error is returned by
+// NewServiceSyncServer if it is not greater than zero.
 func WithFlushInterval(d time.Duration) ServiceSyncServerOption {
 	return func(s *ServiceSyncServer) error {
 		s.flushInterval = d

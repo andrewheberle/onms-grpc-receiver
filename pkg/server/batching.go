@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -32,8 +34,22 @@ type alarmBatcher struct {
 }
 
 // newAlarmBatcher returns an alarmBatcher that holds up to queueSize alarm
-// updates and passes each batch to flush, and registers its metrics with reg
-func newAlarmBatcher(flush func(context.Context, []instanceAlarm), queueSize, flushThreshold int, flushInterval time.Duration, logger *slog.Logger, reg prometheus.Registerer) *alarmBatcher {
+// updates and passes each batch to flush, and registers its metrics with reg.
+// The error returned joins every problem: a flush threshold less than one, a
+// flush interval that is not greater than zero, or metrics that could not be
+// registered.
+func newAlarmBatcher(flush func(context.Context, []instanceAlarm), queueSize, flushThreshold int, flushInterval time.Duration, logger *slog.Logger, reg prometheus.Registerer) (*alarmBatcher, error) {
+	var problems []error
+	if flushThreshold < 1 {
+		problems = append(problems, fmt.Errorf("invalid flush threshold %d: must be at least 1", flushThreshold))
+	}
+	if flushInterval <= 0 {
+		problems = append(problems, fmt.Errorf("invalid flush interval %s: must be greater than zero", flushInterval))
+	}
+	if err := errors.Join(problems...); err != nil {
+		return nil, err
+	}
+
 	b := &alarmBatcher{
 		flush:          flush,
 		flushThreshold: flushThreshold,
@@ -49,9 +65,11 @@ func newAlarmBatcher(flush func(context.Context, []instanceAlarm), queueSize, fl
 			Help: "Total number of alarms dropped due to the queue being full or the server stopping.",
 		}),
 	}
-	reg.MustRegister(b.queueDepth, b.dropped)
+	if err := register(reg, b.queueDepth, b.dropped); err != nil {
+		return nil, err
+	}
 
-	return b
+	return b, nil
 }
 
 // add queues the alarms of an alarm update, dropping them if the queue is
