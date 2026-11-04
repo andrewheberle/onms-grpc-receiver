@@ -171,45 +171,8 @@ func (p *alertPipeline) heartbeat(ctx context.Context, hb *pb.HeartBeat, now tim
 func (p *alertPipeline) flush(ctx context.Context, alarms []instanceAlarm) {
 	list := make([]*postableAlert, 0)
 	for _, ia := range alarms {
-		alarm := ia.alarm
-		id := ia.instanceID
-		name := ia.instanceName
-
 		if p.logAlarms {
-			p.logger.Info("AlarmUpdate",
-				"alarm_id", alarm.GetId(),
-				"uei", alarm.GetUei(),
-				slog.Group("instance",
-					"id", id,
-					"name", name,
-				),
-				slog.Group("node_criteria",
-					"id", alarm.GetNodeCriteria().GetId(),
-					"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
-					"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
-					"node_label", alarm.GetNodeCriteria().GetNodeLabel(),
-					"location", alarm.GetNodeCriteria().GetLocation(),
-				),
-				"ip_address", alarm.GetIpAddress(),
-				"service_name", alarm.GetServiceName(),
-				"reduction_key", alarm.GetReductionKey(),
-				"type", alarm.GetType(),
-				"count", alarm.GetCount(),
-				"severity", alarm.GetSeverity(),
-				"first_event_time", alarm.GetFirstEventTime(),
-				"description", alarm.GetDescription(),
-				"log_message", alarm.GetLogMessage(),
-				"ack_user", alarm.GetAckUser(),
-				"ack_time", alarm.GetAckTime(),
-				"last_event_time", alarm.GetLastEventTime(),
-				"if_index", alarm.GetIfIndex(),
-				"operator_instructions", alarm.GetOperatorInstructions(),
-				"clear_key", alarm.GetClearKey(),
-				"managed_object_instance", alarm.GetManagedObjectInstance(),
-				"managed_object_type", alarm.GetManagedObjectType(),
-				"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
-				"last_update_time", alarm.GetLastUpdateTime(),
-			)
+			p.logAlarm(ia)
 		}
 
 		list = append(list, p.translator.alarm(ia)...)
@@ -219,4 +182,43 @@ func (p *alertPipeline) flush(ctx context.Context, alarms []instanceAlarm) {
 	if err := p.sender.send(ctx, list); err != nil {
 		p.logger.Error("error during send", "error", err)
 	}
+}
+
+// logAlarm logs every field of an alarm, for when alarms are logged in full
+func (p *alertPipeline) logAlarm(ia instanceAlarm) {
+	alarm := ia.alarm
+	p.logger.Info("AlarmUpdate",
+		"alarm_id", alarm.GetId(),
+		"uei", alarm.GetUei(),
+		slog.Group("instance",
+			"id", ia.instanceID,
+			"name", ia.instanceName,
+		),
+		slog.Group("node_criteria",
+			"id", alarm.GetNodeCriteria().GetId(),
+			"foreign_source", alarm.GetNodeCriteria().GetForeignSource(),
+			"foreign_id", alarm.GetNodeCriteria().GetForeignId(),
+			"node_label", alarm.GetNodeCriteria().GetNodeLabel(),
+			"location", alarm.GetNodeCriteria().GetLocation(),
+		),
+		"ip_address", alarm.GetIpAddress(),
+		"service_name", alarm.GetServiceName(),
+		"reduction_key", alarm.GetReductionKey(),
+		"type", alarm.GetType(),
+		"count", alarm.GetCount(),
+		"severity", alarm.GetSeverity(),
+		"first_event_time", alarm.GetFirstEventTime(),
+		"description", alarm.GetDescription(),
+		"log_message", alarm.GetLogMessage(),
+		"ack_user", alarm.GetAckUser(),
+		"ack_time", alarm.GetAckTime(),
+		"last_event_time", alarm.GetLastEventTime(),
+		"if_index", alarm.GetIfIndex(),
+		"operator_instructions", alarm.GetOperatorInstructions(),
+		"clear_key", alarm.GetClearKey(),
+		"managed_object_instance", alarm.GetManagedObjectInstance(),
+		"managed_object_type", alarm.GetManagedObjectType(),
+		"relatedAlarm_count", len(alarm.GetRelatedAlarm()),
+		"last_update_time", alarm.GetLastUpdateTime(),
+	)
 }
