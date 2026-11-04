@@ -1,0 +1,17 @@
+# Go toolchain pinned in go.mod, with a release per update
+
+Builds, tests and releases use the Go toolchain named by the `toolchain` line in `go.mod`, read by `actions/setup-go` through `go-version-file: go.mod`, rather than whatever `stable` is when a workflow runs. Before this, pull requests were built and tested with `stable` while releases, which already read `go.mod`, were built with the exact version on the `go` line, Go 1.26.0, without any of its patch releases. The binary is statically linked, so the Go standard library ships inside it and is as much a part of the image's base as `cgr.dev/chainguard/static` (ADR 0001). It is treated the same way: Renovate updates the `toolchain` line as a `fix(deps)` commit, so every toolchain update ships as a release, and patch updates, which carry Go's security fixes, automerge once `build` passes. Minor updates are merged by hand, as they can bring new vet and lint findings. The `go` line stays the minimum supported version and moves only when a newer Go's language features or `GODEBUG` defaults are wanted, after reading that version's `GODEBUG` changes in its release notes. Renovate leaves it alone by default, as it treats `go 1.26.0` as `^1.26.0`. Lint runs once, on the pinned toolchain. Although `pkg/` can be imported by modules built with any Go from the `go` line on, the compiler rejects language features newer than the `go` line, and vet's `stdversion` check reports standard library use newer than it, so linting on `oldstable` as well adds little.
+
+## Considered Options
+
+- **`go-version: stable` in every workflow**: no updates to merge, and with weekly base image releases a Go fix reaches a release within about a week. But the compiler changes without any commit or changelog entry, a Go release landing between pull request CI and the release run ships a binary built by a compiler CI never tested, and rebuilding a tag later uses a different compiler.
+- **Renovate bumping the `go` line** (`rangeStrategy: bump`) with no `toolchain` line: one line, always the current Go, and `setup-go` reads it just the same. But the `go` line also sets the language version and the default `GODEBUG` settings, and is the minimum Go for modules importing `pkg/`, so every minor bump changes how the binary behaves and what importers need, as well as which compiler builds it. Keeping the two apart means an automerged security patch never changes runtime defaults.
+- **Pinning the version in each workflow's `go-version`**: the same effect, but four copies to keep in step, and local builds would not follow them. The `toolchain` line is one copy, which `go` itself honours when building locally.
+
+## Consequences
+
+About one toolchain update a month, plus a minor update every six months. The `fix` override in `renovate.json` is load-bearing: by default a toolchain update would be a `chore(deps)` commit, which never triggers a release, and the pinned toolchain would fall behind Go's security fixes, which is worse than `stable`.
+
+golangci-lint refuses to lint for a Go version newer than the one its own binary was built with, and it takes that version from the `toolchain` line. So a minor toolchain update fails lint until golangci-lint releases a binary built with that minor version, which is one more reason minor updates wait for a person to merge them.
+
+The lint matrix becomes a single `lint` check, so the `lint (oldstable)` and `lint (stable)` checks no longer run, and any branch protection rule requiring them needs to require `lint` instead.
