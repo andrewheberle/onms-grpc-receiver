@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -225,6 +227,60 @@ func TestAlertPipelineSendContext(t *testing.T) {
 			}
 			if got := sender.ctxErrs[0] != nil; got != tt.wantCancelled {
 				t.Errorf("sent with cancelled context = %v, want %v", got, tt.wantCancelled)
+			}
+		})
+	}
+}
+
+// TestAlertPipelineLogsAlarms checks every alarm is logged in full only when
+// alarms are logged, which is when verbose or when no Alertmanager is
+// configured
+func TestAlertPipelineLogsAlarms(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name      string
+		logAlarms bool
+		want      []string
+	}{
+		{"logged", true, []string{
+			`msg=AlarmUpdate alarm_id=25 uei=uei.opennms.org/nodes/nodeLostService`,
+			`instance.id=6f8a7c1e-uuid instance.name=OpenNMS`,
+			`node_criteria.id=12 node_criteria.foreign_source=customer-a node_criteria.foreign_id=1234 node_criteria.node_label=router1 node_criteria.location=Perth`,
+			`ip_address=10.0.0.1 service_name=ICMP`,
+			`log_message="ICMP outage identified on interface 10.0.0.1."`,
+			`operator_instructions="Check the router, see https://wiki.example.com/runbooks/icmp"`,
+		}},
+		{"not logged", false, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, nil))
+			sender := &fakeSender{}
+			p := must(newAlertPipeline(newTestTranslator(t, translationConfig{}), sender, 1000, time.Hour, tt.logAlarms, logger, prometheus.NewRegistry()))(t)
+
+			runPipeline(p, func() {
+				p.alarmUpdate(pb.AlarmUpdateList_builder{
+					InstanceId:   "6f8a7c1e-uuid",
+					InstanceName: "OpenNMS",
+					Alarms:       []*pb.Alarm{fullAlarm(now)},
+				}.Build(), now)
+			})
+
+			// the alarm is sent either way
+			if len(sender.sent()) != 1 {
+				t.Errorf("sent %d alerts, want 1", len(sender.sent()))
+			}
+
+			got := logs.String()
+			if !tt.logAlarms && strings.Contains(got, "alarm_id=") {
+				t.Errorf("logs = %q, want no alarm logged in full", got)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("logs = %q, want containing %q", got, want)
+				}
 			}
 		})
 	}
