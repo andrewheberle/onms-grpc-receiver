@@ -6,7 +6,7 @@ While a Horizon instance restarts it sends no Snapshots, so Alerts for firing Al
 
 - **Raising `--resolve.timeout`**: also delays the `OpenNMSHeartbeat` Alert resolving, which is what shows that OpenNMS is down while Alerts are held.
 - **Holding only while Heartbeats are missing**: Heartbeats resume before Snapshots after a restart, as Horizon sends Heartbeats on its own 60 second timer while the first Snapshot only follows on a later 2 minute alarmd tick, so the hold would end before Alerts are refreshed.
-- **Holding only while Snapshots are overdue (stateful)**: remembers the last firing Alerts per Horizon instance and re-sends them with a later end time until a Snapshot arrives or the hold runs out. Alerts behave as before while healthy, but it needs a refresh loop, memory for every Alarm, state keyed on instance name as well as ID (the ID defaults to all zeros on every Horizon instance), and the state is lost if the receiver restarts during the outage.
+- **Holding only while Snapshots are overdue (stateful)**: remembers the last firing Alerts per Horizon instance and re-sends them with a later end time until a Snapshot arrives or the hold runs out. Alerts behave as before while healthy, but it needs a refresh loop, memory for every Alarm, state keyed on each Horizon instance (its ID is a random UUID set when it is installed, but an install that skips the upgrade tools keeps the all-zeros default, and a server built from a copy of another's database shares its ID), and the state is lost if the receiver restarts during the outage.
 - **Resolving Alarms missing from a Snapshot (stateful)**: would allow a long hold without delaying the resolution of Alarms deleted in OpenNMS, but needs the same state as the previous option.
 
 ## Consequences
