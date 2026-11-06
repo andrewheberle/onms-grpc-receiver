@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.14.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.13.2...v0.14.0) (2026-11-06)
+
+
+### Features
+
+* add a healthcheck command and a Docker HEALTHCHECK ([#177](https://github.com/andrewheberle/onms-grpc-receiver/issues/177)) ([2a87cb9](https://github.com/andrewheberle/onms-grpc-receiver/commit/2a87cb915eaff321120fbc20a21dd9759a3b90e5))
+* **server:** close gRPC connections that stop answering keepalive pings ([#173](https://github.com/andrewheberle/onms-grpc-receiver/issues/173)) ([019266d](https://github.com/andrewheberle/onms-grpc-receiver/commit/019266df1255f0106430535b37511ce6ab0019f8))
+* **server:** report readiness over gRPC health and /-/ready ([#172](https://github.com/andrewheberle/onms-grpc-receiver/issues/172)) ([aa794bb](https://github.com/andrewheberle/onms-grpc-receiver/commit/aa794bb0b8dc715a6c5b93358a1a4234c5476c51))
+* **server:** retry and chunk alert delivery ([#167](https://github.com/andrewheberle/onms-grpc-receiver/issues/167)) ([0c8e549](https://github.com/andrewheberle/onms-grpc-receiver/commit/0c8e54922a497c3ec8009347381d88b77c2dab1a))
+
+
+### Bug Fixes
+
+* **server:** keep credentials and query strings out of metrics, logs and errors ([#170](https://github.com/andrewheberle/onms-grpc-receiver/issues/170)) ([03eb190](https://github.com/andrewheberle/onms-grpc-receiver/commit/03eb1900777b8ccb60c97cf4830fab18ea77936f))
+* **server:** refuse credentials in --map.url ([#171](https://github.com/andrewheberle/onms-grpc-receiver/issues/171)) ([6f077be](https://github.com/andrewheberle/onms-grpc-receiver/commit/6f077bea6bc0e80bdb7175ec0e16df4190a79890))
+* **server:** validate configuration at startup ([#169](https://github.com/andrewheberle/onms-grpc-receiver/issues/169)) ([6f07a05](https://github.com/andrewheberle/onms-grpc-receiver/commit/6f07a05618e9fe21613043b2e81829b283873f90))
+
 ## [0.13.2](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.13.1...v0.13.2) (2026-11-02)
 
 
