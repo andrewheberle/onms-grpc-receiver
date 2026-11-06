@@ -10,7 +10,7 @@ Builds, tests and releases use the Go toolchain named by the `toolchain` line in
 
 ## Consequences
 
-About one toolchain update a month, plus a minor update every six months. The `fix` override in `renovate.json` is load-bearing: by default a toolchain update would be a `chore(deps)` commit, which never triggers a release, and the pinned toolchain would fall behind Go's security fixes, which is worse than `stable`.
+About one toolchain update a month, plus a minor update every six months. The `fix` override, now in the shared preset `github>andrewheberle/renovate-config` (see its [ADR 0001](https://github.com/andrewheberle/renovate-config/blob/main/docs/adr/0001-shipping-updates-are-fix-commits.md)), is load-bearing: by default a toolchain update would be a `chore(deps)` commit, which never triggers a release, and the pinned toolchain would fall behind Go's security fixes, which is worse than `stable`.
 
 golangci-lint refuses to lint for a Go version newer than the one its own binary was built with, and it takes that version from the `toolchain` line. So a minor toolchain update fails lint until golangci-lint releases a binary built with that minor version, which is one more reason minor updates wait for a person to merge them.
 
