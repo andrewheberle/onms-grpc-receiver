@@ -6,7 +6,7 @@ toolchain go1.27.3
 
 require (
 	github.com/andrewheberle/simplecommand v0.8.0
-	github.com/andrewheberle/simplecommand/koanfcommand v0.1.2
+	github.com/andrewheberle/simplecommand/koanfcommand v0.1.3
 	github.com/bep/simplecobra v0.8.0
 	github.com/cloudflare/certinel v0.4.1
 	github.com/go-openapi/strfmt v0.27.4
@@ -58,7 +58,7 @@ require (
 	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/spf13/pflag v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect

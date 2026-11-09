@@ -2,6 +2,8 @@ github.com/andrewheberle/simplecommand v0.8.0 h1:9zX9qmydlTx7KyVXmQat8gam31OrdX5
 github.com/andrewheberle/simplecommand v0.8.0/go.mod h1:mwOLcpoyFoR4UshHv6NevDMMkQJzKMlpcx8WWBkWlxE=
 github.com/andrewheberle/simplecommand/koanfcommand v0.1.2 h1:dFe5f9yn1iC6wYhh82LWd7bg5G0PL4yedwC3VKufCU8=
 github.com/andrewheberle/simplecommand/koanfcommand v0.1.2/go.mod h1:L42mKdN6rTiglKQ3fUyAf7JRgtnvcuOo0dOYCh26qXY=
+github.com/andrewheberle/simplecommand/koanfcommand v0.1.3 h1:ZZykf9UnWMQg1VallyhiJqyocihalzorj1NwjqH+Wlw=
+github.com/andrewheberle/simplecommand/koanfcommand v0.1.3/go.mod h1:ZZ8EY3/AsYer4euZ9u5nCaO5DJDTKrSrUAAAmPfOOXk=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bep/simplecobra v0.8.0 h1:s9rOX0I9rk5gujqaEanfAutlBNjPxsLMt58ygmzng18=
@@ -162,6 +164,8 @@ github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiT
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
 github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+github.com/spf13/pflag v1.1.0 h1:6W6MbVUrnMb8PEhjkqwsVLY7ryuzRfFHF4mQd7L94ag=
+github.com/spf13/pflag v1.1.0/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
