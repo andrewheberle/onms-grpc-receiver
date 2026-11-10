@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.1](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.14.0...v0.14.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **deps:** update go toolchain directive to v1.27.4 ([#187](https://github.com/andrewheberle/onms-grpc-receiver/issues/187)) ([b8658c0](https://github.com/andrewheberle/onms-grpc-receiver/commit/b8658c0d56350406b058b5fb4aac5acac07eca3a))
+* **deps:** update module github.com/andrewheberle/simplecommand/koanfcommand to v0.1.3 ([#184](https://github.com/andrewheberle/onms-grpc-receiver/issues/184)) ([79f52ab](https://github.com/andrewheberle/onms-grpc-receiver/commit/79f52abb2ced83a8cc3eb26937f1c79337fb71e3))
+* **deps:** update module github.com/prometheus/alertmanager to v0.35.0 ([#185](https://github.com/andrewheberle/onms-grpc-receiver/issues/185)) ([8432bcd](https://github.com/andrewheberle/onms-grpc-receiver/commit/8432bcd1b1a649be658aac2efdbfdfe03f0755e1))
+
 ## [0.14.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.13.2...v0.14.0) (2026-11-06)
 
 
