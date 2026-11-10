@@ -8,7 +8,7 @@ This is a service that acts as a server for the [OpenNMS gRPC Exporter](https://
 ## Running via Docker
 
 ```sh
-docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.14.0 --alertmanager.url http://am:9092 # x-release-please-version
+docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.14.1 --alertmanager.url http://am:9092 # x-release-please-version
 ```
 
 ## Command Line Options
@@ -447,7 +447,7 @@ depend on it, and Docker Swarm replace an unhealthy receiver:
 ```yaml
 services:
   onms-grpc-receiver:
-    image: ghcr.io/andrewheberle/onms-grpc-receiver:v0.14.0 # x-release-please-version
+    image: ghcr.io/andrewheberle/onms-grpc-receiver:v0.14.1 # x-release-please-version
     command: --alertmanager.url http://alertmanager:9093
   app:
     image: example/app
