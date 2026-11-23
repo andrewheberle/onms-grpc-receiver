@@ -122,6 +122,17 @@ from Alertmanager is logged. Sending to all Alertmanagers, including any
 retries, gives up after 10 seconds, so that an Alertmanager that is down does
 not hold up the alarms and heartbeats that follow.
 
+Redirects (`3xx`) are not followed and are failures that are not retried, as
+Alertmanager does not redirect its API. A redirect usually means the URL is
+wrong or a proxy in front of Alertmanager is not letting the request through,
+such as an authenticating proxy (eg. Cloudflare Access) sending requests
+without valid credentials to its login page. Following it would send the
+alerts and `--headers` elsewhere, and would turn the request into one without
+the alerts that the login page accepts, so alerts would be lost while appearing
+to be sent. The error logged shows only the scheme and host the redirect points
+to, as the rest of its URL may hold tokens. Each `--alertmanager.url` must
+therefore be the URL Alertmanager answers at.
+
 Alerts that could not be sent are not kept to be sent later. Firing alarms are
 sent again with the next alarm snapshot (every 2 minutes by default), and
 cleared alarms are sent with every snapshot until the resolve timeout plus any

@@ -144,7 +144,7 @@ var retryBackoff = [maxAttempts - 1]time.Duration{500 * time.Millisecond, time.S
 // found by discovery, adding headers to every request, and registers its
 // metrics with reg
 func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger, reg prometheus.Registerer) (*alertDelivery, error) {
-	client := &http.Client{}
+	client := &http.Client{CheckRedirect: noRedirects}
 	if headers != nil {
 		client.Transport = &customTransport{
 			Headers: headers,
@@ -274,6 +274,17 @@ func (d *alertDelivery) postChunk(ctx context.Context, u, name string, payload [
 	}
 }
 
+// noRedirects stops the client following redirects, so a redirect is
+// returned as the response. Alertmanager does not redirect the alerts API, so
+// a redirect means the URL is wrong or something else answered, such as an
+// authenticating proxy sending the request to its login page. Following it
+// would send the headers to wherever it points, and a 301, 302 or 303 would
+// turn the POST into a GET without the alerts, which a login page answers
+// with 200 OK, so alerts would be lost while appearing to be sent.
+func noRedirects(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 // statusError is an unsuccessful response from an Alertmanager
 type statusError struct {
 	// url is the alerts URL of the Alertmanager as safeURL shows it
@@ -281,14 +292,42 @@ type statusError struct {
 	code   int
 	status string
 	body   []byte
+
+	// location is the scheme and host a redirect points to, if known
+	location string
 }
 
 func (e *statusError) Error() string {
-	if len(e.body) == 0 {
+	switch {
+	case e.location != "":
+		return fmt.Sprintf("alertmanager %s returned %s: redirected to %s", e.url, e.status, e.location)
+	case len(e.body) == 0:
 		return fmt.Sprintf("alertmanager %s returned %s", e.url, e.status)
 	}
 
 	return fmt.Sprintf("alertmanager %s returned %s: %s", e.url, e.status, e.body)
+}
+
+// newStatusError returns the statusError for resp, an unsuccessful response
+// from the Alertmanager shown as name. A redirect has only the scheme and host
+// it points to, not its path, query or body, as they may hold tokens, such as
+// those of a login page. Other responses have the start of their body, which
+// is what Alertmanager says was wrong.
+func newStatusError(resp *http.Response, name string) *statusError {
+	se := &statusError{url: name, code: resp.StatusCode, status: resp.Status}
+
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		if u, err := resp.Location(); err == nil && u.Host != "" {
+			se.location = u.Scheme + "://" + u.Host
+		}
+
+		return se
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+	se.body = bytes.TrimSpace(body)
+
+	return se
 }
 
 // retryable reports whether a request that failed with err may succeed if
@@ -327,9 +366,7 @@ func (d *alertDelivery) do(ctx context.Context, u, name string, payload []byte, 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-
-		return &statusError{url: name, code: resp.StatusCode, status: resp.Status, body: bytes.TrimSpace(body)}
+		return newStatusError(resp, name)
 	}
 
 	logger.Info("sent to alertmanager", "url", name, "status", resp.Status)

@@ -172,6 +172,102 @@ func TestAlertDeliverySendFailure(t *testing.T) {
 	}
 }
 
+// TestAlertDeliverySendRedirect checks a redirect from an Alertmanager URL,
+// such as to the login page of an authenticating proxy, is a failure that is
+// not followed or retried. Following it would turn a POST into a GET without
+// the alerts, which the login page accepts. The error shows only the scheme
+// and host the redirect points to, as its path and query may hold tokens.
+func TestAlertDeliverySendRedirect(t *testing.T) {
+	// target stands in for a login page, answering any request with 200 OK
+	var mu sync.Mutex
+	var followed []string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		followed = append(followed, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		_, _ = w.Write([]byte("<html>login</html>"))
+	}))
+	t.Cleanup(target.Close)
+
+	const secret = "secret-token"
+
+	tests := []struct {
+		name   string
+		status int
+		// relative redirects to a path on the Alertmanager itself rather
+		// than to target
+		relative bool
+	}{
+		{"moved permanently", http.StatusMovedPermanently, false},
+		{"found", http.StatusFound, false},
+		{"see other", http.StatusSeeOther, false},
+		{"temporary redirect", http.StatusTemporaryRedirect, false},
+		{"permanent redirect", http.StatusPermanentRedirect, false},
+		{"relative", http.StatusFound, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mu.Lock()
+			followed = nil
+			mu.Unlock()
+
+			var requests int
+			am := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				requests++
+				mu.Unlock()
+
+				location := target.URL + "/cdn-cgi/access/login?meta=" + secret
+				if tt.relative {
+					location = "/login?meta=" + secret
+				}
+				w.Header().Set("Location", location)
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(`<a href="` + location + `">login</a>`))
+			}))
+			t.Cleanup(am.Close)
+
+			reg := prometheus.NewRegistry()
+			d := must(newAlertDelivery(newTestStaticDiscovery(t, am.URL), map[string]string{"CF-Access-Client-Secret": "header-secret"}, slog.New(slog.DiscardHandler), reg))(t)
+
+			err := d.send(context.Background(), testAlerts())
+			if err == nil {
+				t.Fatal("send() error = nil, want the redirect as an error")
+			}
+
+			wantHost := target.URL
+			if tt.relative {
+				wantHost = am.URL
+			}
+			for _, want := range []string{am.URL + alertsPath, fmt.Sprintf("%d %s", tt.status, http.StatusText(tt.status)), "redirected to " + wantHost} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("send() error = %q, want containing %q", err, want)
+				}
+			}
+			for _, hidden := range []string{secret, "/cdn-cgi", "/login", "<a href"} {
+				if strings.Contains(err.Error(), hidden) {
+					t.Errorf("send() error = %q, want no %q from the redirect", err, hidden)
+				}
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if len(followed) != 0 {
+				t.Errorf("redirect followed with %v, want not followed", followed)
+			}
+			if requests != 1 {
+				t.Errorf("alertmanager got %d requests, want 1 as a redirect is not retried", requests)
+			}
+			if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", am.URL+alertsPath); got != 1 {
+				t.Errorf("errors = %v, want 1", got)
+			}
+			if got := metricValue(t, reg, "onmsgrpc_alertmanager_retries_total", "alertmanager", am.URL+alertsPath); got != 0 {
+				t.Errorf("retries = %v, want 0", got)
+			}
+		})
+	}
+}
+
 // TestAlertDeliverySendCancelled checks a send stops when its context is
 // cancelled, and is counted as a failure
 func TestAlertDeliverySendCancelled(t *testing.T) {
@@ -617,6 +713,7 @@ func TestAlertDeliveryRetry(t *testing.T) {
 		{"server errors", []reply{{status: 500}, {status: 500}, {status: 500}}, true, 2, 1500 * time.Millisecond},
 		{"invalid alerts", []reply{{status: http.StatusBadRequest}}, true, 0, 0},
 		{"not found", []reply{{status: http.StatusNotFound}}, true, 0, 0},
+		{"redirect", []reply{{status: http.StatusFound}}, true, 0, 0},
 		{"no response", []reply{hang, hang}, true, 1, sendTimeout},
 	}
 	for _, tt := range tests {
