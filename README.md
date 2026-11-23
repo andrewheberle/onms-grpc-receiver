@@ -432,7 +432,7 @@ running build, as for `prometheus_build_info` and similar metrics:
 |-------------|------------------------------------------------------------------------|
 | `version`   | The release version without its leading `v` (eg. `0.15.0`), or `dev`   |
 | `revision`  | The git commit the receiver was built from, or `unknown`               |
-| `branch`    | Always empty                                                           |
+| `branch`    | `HEAD` for releases, which build a tag, or empty for local builds      |
 | `goversion` | The Go version it was built with                                       |
 | `goos`      | The operating system it was built for                                  |
 | `goarch`    | The architecture it was built for                                      |

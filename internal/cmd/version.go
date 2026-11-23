@@ -23,7 +23,8 @@ import (
 //
 // The revision is read by github.com/prometheus/common/version from the VCS
 // information Go records in local builds. Releases have none, as they are
-// built from the module proxy, so their revision is set with -X.
+// built from the module proxy, so their revision is set with -X, as is their
+// branch, which is "HEAD" as releases build a tag, as for Thanos and Alloy.
 func init() {
 	info, ok := debug.ReadBuildInfo()
 	version.Version = moduleVersion(info, ok)

@@ -19,7 +19,7 @@ builds:
     tags:
       - netgo
     ldflags:
-      - -s -w -X github.com/prometheus/common/version.Revision={{ .FullCommit }}
+      - -s -w -X github.com/prometheus/common/version.Revision={{ .FullCommit }} -X github.com/prometheus/common/version.Branch={{ .Branch }}
 
 gomod:
   proxy: true
