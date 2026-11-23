@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.14.1...v0.15.0) (2026-11-23)
+
+
+### Features
+
+* **server:** add a reason label to onmsgrpc_alertmanager_failed_total ([ff8945d](https://github.com/andrewheberle/onms-grpc-receiver/commit/ff8945d1c274cfe26eab394ef83c06be5edb3fbb))
+
+
+### Bug Fixes
+
+* **deps:** update cgr.dev/chainguard/static:latest docker digest to 8658e9e ([#193](https://github.com/andrewheberle/onms-grpc-receiver/issues/193)) ([33a23f5](https://github.com/andrewheberle/onms-grpc-receiver/commit/33a23f530efa528c7724bba7dcd8fa51c0a470cc))
+* **server:** treat Alertmanager redirects as delivery failures ([ff8945d](https://github.com/andrewheberle/onms-grpc-receiver/commit/ff8945d1c274cfe26eab394ef83c06be5edb3fbb))
+
 ## [0.14.1](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.14.0...v0.14.1) (2026-11-10)
 
 
