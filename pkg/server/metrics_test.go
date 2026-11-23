@@ -51,6 +51,35 @@ func metricValue(t *testing.T, g prometheus.Gatherer, name string, labels ...str
 	return 0
 }
 
+// metricSum returns the sum of the values of every series of the counter
+// name in g with the given label name and value pairs, or 0 if there are no
+// such series
+func metricSum(t *testing.T, g prometheus.Gatherer, name string, labels ...string) float64 {
+	t.Helper()
+
+	if len(labels)%2 != 0 {
+		t.Fatalf("metricSum() labels %v are not name and value pairs", labels)
+	}
+
+	family := gatherFamily(t, g, name)
+	if family == nil {
+		return 0
+	}
+
+	var sum float64
+	for _, m := range family.GetMetric() {
+		if !hasLabels(m, labels) {
+			continue
+		}
+		if m.GetCounter() == nil {
+			t.Fatalf("metric %s is not a counter", name)
+		}
+		sum += m.GetCounter().GetValue()
+	}
+
+	return sum
+}
+
 // gatherFamily returns the metric family name from g, or nil if it has no
 // series
 func gatherFamily(t *testing.T, g prometheus.Gatherer, name string) *dto.MetricFamily {

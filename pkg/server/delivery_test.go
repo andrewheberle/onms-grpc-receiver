@@ -162,10 +162,10 @@ func TestAlertDeliverySendFailure(t *testing.T) {
 			if len(ok.alerts) != 1 {
 				t.Errorf("working alertmanager got %d alerts, want 1", len(ok.alerts))
 			}
-			if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", failing.URL+alertsPath); got != 1 {
+			if got := metricSum(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", failing.URL+alertsPath); got != 1 {
 				t.Errorf("errors for failing alertmanager = %v, want 1", got)
 			}
-			if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", ok.URL+alertsPath); got != 0 {
+			if got := metricSum(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", ok.URL+alertsPath); got != 0 {
 				t.Errorf("errors for working alertmanager = %v, want 0", got)
 			}
 		})
@@ -258,7 +258,7 @@ func TestAlertDeliverySendRedirect(t *testing.T) {
 			if requests != 1 {
 				t.Errorf("alertmanager got %d requests, want 1 as a redirect is not retried", requests)
 			}
-			if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", am.URL+alertsPath); got != 1 {
+			if got := metricSum(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", am.URL+alertsPath, "reason", reasonRedirect); got != 1 {
 				t.Errorf("errors = %v, want 1", got)
 			}
 			if got := metricValue(t, reg, "onmsgrpc_alertmanager_retries_total", "alertmanager", am.URL+alertsPath); got != 0 {
@@ -285,7 +285,7 @@ func TestAlertDeliverySendCancelled(t *testing.T) {
 	if len(am.alerts) != 0 {
 		t.Errorf("alertmanager got %d alerts, want none", len(am.alerts))
 	}
-	if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", am.URL+alertsPath); got != 1 {
+	if got := metricSum(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", am.URL+alertsPath, "reason", reasonNetwork); got != 1 {
 		t.Errorf("errors = %v, want 1", got)
 	}
 }
@@ -753,8 +753,73 @@ func TestAlertDeliveryRetry(t *testing.T) {
 					{"onmsgrpc_alertmanager_failed_total", wantFailed},
 					{"onmsgrpc_alertmanager_retries_total", tt.wantRetries},
 				} {
-					if got := metricValue(t, reg, m.name, "alertmanager", "http://am"+alertsPath); got != m.want {
+					if got := metricSum(t, reg, m.name, "alertmanager", "http://am"+alertsPath); got != m.want {
 						t.Errorf("%s = %v, want %v", m.name, got, m.want)
+					}
+				}
+			})
+		})
+	}
+}
+
+// TestAlertDeliveryFailureReason checks a failed send is counted by the
+// reason it failed, after any retries, and that the series of every reason
+// exist from the first send to an Alertmanager, so the first failure is not
+// missed by rate() or increase()
+func TestAlertDeliveryFailureReason(t *testing.T) {
+	var (
+		hang    = reply{}
+		network = reply{err: errors.New("connection refused")}
+	)
+
+	tests := []struct {
+		name    string
+		replies []reply
+		want    string // the reason counted, or none if empty
+	}{
+		{"accepted", []reply{{status: http.StatusOK}}, ""},
+		{"moved permanently", []reply{{status: http.StatusMovedPermanently}}, reasonRedirect},
+		{"found", []reply{{status: http.StatusFound}}, reasonRedirect},
+		{"permanent redirect", []reply{{status: http.StatusPermanentRedirect}}, reasonRedirect},
+		{"invalid alerts", []reply{{status: http.StatusBadRequest}}, reasonClientError},
+		{"unauthorized", []reply{{status: http.StatusUnauthorized}}, reasonClientError},
+		{"forbidden", []reply{{status: http.StatusForbidden}}, reasonClientError},
+		{"not found", []reply{{status: http.StatusNotFound}}, reasonClientError},
+		{"rate limited", []reply{{status: 429}, {status: 429}, {status: 429}}, reasonClientError},
+		{"unexpected success status", []reply{{status: http.StatusAccepted}}, reasonClientError},
+		{"server errors", []reply{{status: 500}, {status: 500}, {status: 500}}, reasonServerError},
+		{"bad gateway then server errors", []reply{{status: 502}, {status: 503}, {status: 500}}, reasonServerError},
+		{"network errors", []reply{network, network, network}, reasonNetwork},
+		{"server errors then network error", []reply{{status: 500}, {status: 500}, network}, reasonNetwork},
+		{"no response", []reply{hang, hang}, reasonNetwork},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				transport := &fakeTransport{respond: func(_ string, n int) reply {
+					if n >= len(tt.replies) {
+						t.Errorf("request %d made, want only %d", n+1, len(tt.replies))
+						return reply{status: http.StatusOK}
+					}
+					return tt.replies[n]
+				}}
+				d, reg := newFakeDelivery(t, transport, "am")
+
+				err := d.send(context.Background(), testAlerts())
+				if (err != nil) != (tt.want != "") {
+					t.Errorf("send() error = %v, want error %v", err, tt.want != "")
+				}
+
+				if got := metricSeries(t, reg, "onmsgrpc_alertmanager_failed_total"); got != len(failureReasons) {
+					t.Errorf("failed_total has %d series, want %d, one for each reason", got, len(failureReasons))
+				}
+				for _, reason := range failureReasons {
+					want := 0.0
+					if reason == tt.want {
+						want = 1
+					}
+					if got := metricSum(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", "http://am"+alertsPath, "reason", reason); got != want {
+						t.Errorf("failed_total{reason=%q} = %v, want %v", reason, got, want)
 					}
 				}
 			})
@@ -809,7 +874,7 @@ func TestAlertDeliveryChunks(t *testing.T) {
 					if tt.reject < 0 {
 						want = 0
 					}
-					if got := metricValue(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", "http://"+host+alertsPath); got != want {
+					if got := metricSum(t, reg, "onmsgrpc_alertmanager_failed_total", "alertmanager", "http://"+host+alertsPath); got != want {
 						t.Errorf("failed for %s = %v, want %v", host, got, want)
 					}
 					if got := metricValue(t, reg, "onmsgrpc_alertmanager_total", "alertmanager", "http://"+host+alertsPath); got != 1 {
