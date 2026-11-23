@@ -19,7 +19,7 @@ builds:
     tags:
       - netgo
     ldflags:
-      - -s -w -X github.com/andrewheberle/onms-grpc-receiver/pkg/cmd.Version={{ .Version }} -X main.Date={{ .CommitDate }}
+      - -s -w -X github.com/prometheus/common/version.Revision={{ .FullCommit }}
 
 gomod:
   proxy: true
