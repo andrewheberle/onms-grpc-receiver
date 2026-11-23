@@ -45,6 +45,14 @@ Run these before considering any change complete:
 - Merging the release PR creates the `vX.Y.Z` tag and GitHub release; the tag triggers GoReleaser, which adds the artifacts to that release.
 - Don't edit `CHANGELOG.md` or `.release-please-manifest.json` by hand; release-please maintains them.
 - PRs are squash merged with the PR title as the commit message, so PR titles must be conventional commits (`feat:`, `fix(scope):`, `feat!:` for breaking changes); the PR title check enforces this. Only `feat`, `fix`, `perf`, `revert` and breaking changes trigger a release.
+- The squash commit carries only the title, never the PR body, so a PR has one changelog entry. When a PR carries more than one releasable change, title it with the highest-impact type and end the PR body with a release-please override block, one conventional commit per change, separated by blank lines. Release-please reads the block from the merged PR's body ([docs](https://github.com/googleapis/release-please#how-can-i-fix-release-notes)):
+  ```
+  BEGIN_COMMIT_OVERRIDE
+  fix(server): treat Alertmanager redirects as delivery failures
+
+  feat(server): add a reason label to onmsgrpc_alertmanager_failed_total
+  END_COMMIT_OVERRIDE
+  ```
 - In PR titles, bodies, commit messages and comments, GitHub links `#N` to issue or PR N, so write `#N` only for those and number anything else plainly ("candidate 5", "step 3").
 - Never delete, move, or force-push an existing tag. The Go module proxy caches versions immutably, so a retagged version won't be picked up. Fix forward with a new patch version.
 - Don't edit `.goreleaser.yaml` or CI config unless the task is specifically about them.
