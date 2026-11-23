@@ -393,6 +393,22 @@ send anything when an alarm is deleted, so an alarm deleted without first being
 cleared resolves its alert the resolve timeout plus the hold after the last
 snapshot that included it.
 
+## Logging
+
+Logs are written to stderr in logfmt, with the level in a `level` field in
+upper case:
+
+```
+time=2026-11-23T15:00:19.324+08:00 level=INFO msg=AlarmUpdate instance.id=e07de685-26a8-4c4d-9960-f8ed03969efe instance.name=OpenNMS snapshot=false alarmcount=1
+```
+
+Take the level from that field, not from the stream. If the container's logs
+go to journald, Docker's `journald` log driver gives every line from stderr the
+priority `err`, whatever its level, so a pipeline that labels log lines from the
+journald priority will mark them all as errors. With Grafana Alloy, for
+example, parse the line with `stage.logfmt` and set the `level` label from the
+extracted field.
+
 ## Metrics
 
 Prometheus metrics are exposed on the `/metrics` path (by default) when the `--metrics.address` flag is provided.
