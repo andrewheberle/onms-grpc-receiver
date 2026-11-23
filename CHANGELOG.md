@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.15.0...v0.16.0) (2026-11-23)
+
+
+### Features
+
+* add an onmsgrpc_build_info metric ([#197](https://github.com/andrewheberle/onms-grpc-receiver/issues/197)) ([7f7367e](https://github.com/andrewheberle/onms-grpc-receiver/commit/7f7367eeaaeabacec145d3805d8b147047d17b63))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/prometheus/common to v0.74.0 ([#199](https://github.com/andrewheberle/onms-grpc-receiver/issues/199)) ([a41f405](https://github.com/andrewheberle/onms-grpc-receiver/commit/a41f4057e026d3ef2da89f000b89d1769184f534))
+
 ## [0.15.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.14.1...v0.15.0) (2026-11-23)
 
 
