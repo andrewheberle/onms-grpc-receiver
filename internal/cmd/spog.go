@@ -18,6 +18,8 @@ import (
 	"github.com/bep/simplecobra"
 	"github.com/cloudflare/certinel/fswatcher"
 	"github.com/oklog/run"
+	"github.com/prometheus/client_golang/prometheus"
+	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -121,8 +123,14 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		logLevel.Set(slog.LevelDebug)
 	}
 
+	// the build information of the receiver is registered here rather than
+	// by the server, as it describes this program, not the server package
+	registry := prometheus.NewRegistry()
+	buildInfoErr := registry.Register(versioncollector.NewCollector("onmsgrpc"))
+
 	// server options
 	opts := []server.ServiceSyncServerOption{
+		server.WithRegistry(registry),
 		server.WithLogger(c.logger),
 		server.WithURLMapping(c.urlMapping),
 		server.WithResolveTimeout(c.resolveTimeout),
@@ -157,7 +165,7 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 
 	// check the options of the command and of the server together, so every
 	// problem is reported at once
-	problems := []error{checkMetricsPath(c.metricsPath)}
+	problems := []error{checkMetricsPath(c.metricsPath), buildInfoErr}
 	if c.maxRecvMsgSize <= 0 {
 		problems = append(problems, fmt.Errorf("invalid --grpc.max-recv-size %d: must be greater than zero", c.maxRecvMsgSize))
 	}

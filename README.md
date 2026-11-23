@@ -423,6 +423,33 @@ groups:
 
 The second rule also covers the period after the receiver restarts, until the next snapshot arrives.
 
+### Build information
+
+The `onmsgrpc_build_info` gauge is always `1`, with labels describing the
+running build, as for `prometheus_build_info` and similar metrics:
+
+| Label       | Value                                                                  |
+|-------------|------------------------------------------------------------------------|
+| `version`   | The release version without its leading `v` (eg. `0.15.0`), or `dev`   |
+| `revision`  | The git commit the receiver was built from, or `unknown`               |
+| `branch`    | `HEAD` for releases, which build a tag, or empty for local builds      |
+| `goversion` | The Go version it was built with                                       |
+| `goos`      | The operating system it was built for                                  |
+| `goarch`    | The architecture it was built for                                      |
+| `tags`      | The Go build tags                                                      |
+
+The `version` command prints the same version and revision:
+
+```sh
+$ onms-grpc-receiver version
+onms-grpc-receiver version: 0.15.0 (revision: 1a2b3c...)
+```
+
+Releases and `go install` of a version report that version. A local build
+from a git checkout reports a pseudo-version and its commit, and a build
+without either reports `dev`. A `go install` build reports a revision of
+`unknown`.
+
 ## Health Checks
 
 The receiver reports whether it is ready to receive alarm updates and

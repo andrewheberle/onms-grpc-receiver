@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/common/version"
 )
 
 func TestSpogRejectsBuiltinNames(t *testing.T) {
@@ -124,12 +128,18 @@ func TestSpogHealthChecks(t *testing.T) {
 		done <- Execute(ctx, []string{"spog", "--silent", "--address", "127.0.0.1:0", "--metrics.address", addr})
 	}()
 
+	// the build information is exposed with the version that the version
+	// command prints
+	buildInfo := fmt.Sprintf(`onmsgrpc_build_info{branch=%q,goarch=%q,goos=%q,goversion=%q,revision=%q,tags=%q,version=%q} 1`,
+		version.Branch, runtime.GOARCH, runtime.GOOS, runtime.Version(), version.GetRevision(), version.GetTags(), version.Version)
+
 	tests := []struct {
 		path     string
 		wantBody string
 	}{
 		{"/-/healthy", "Healthy"},
 		{"/-/ready", "Ready"},
+		{"/metrics", buildInfo},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -150,8 +160,8 @@ func TestSpogHealthChecks(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 
-			if code != http.StatusOK || body != tt.wantBody {
-				t.Errorf("GET %s = %d %q, want 200 %q", tt.path, code, body, tt.wantBody)
+			if code != http.StatusOK || !strings.Contains(body, tt.wantBody) {
+				t.Errorf("GET %s = %d %q, want 200 containing %q", tt.path, code, body, tt.wantBody)
 			}
 		})
 	}
