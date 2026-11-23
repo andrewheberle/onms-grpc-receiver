@@ -122,6 +122,17 @@ from Alertmanager is logged. Sending to all Alertmanagers, including any
 retries, gives up after 10 seconds, so that an Alertmanager that is down does
 not hold up the alarms and heartbeats that follow.
 
+Redirects (`3xx`) are not followed and are failures that are not retried, as
+Alertmanager does not redirect its API. A redirect usually means the URL is
+wrong or a proxy in front of Alertmanager is not letting the request through,
+such as an authenticating proxy (eg. Cloudflare Access) sending requests
+without valid credentials to its login page. Following it would send the
+alerts and `--headers` elsewhere, and would turn the request into one without
+the alerts that the login page accepts, so alerts would be lost while appearing
+to be sent. The error logged shows only the scheme and host the redirect points
+to, as the rest of its URL may hold tokens. Each `--alertmanager.url` must
+therefore be the URL Alertmanager answers at.
+
 Alerts that could not be sent are not kept to be sent later. Firing alarms are
 sent again with the next alarm snapshot (every 2 minutes by default), and
 cleared alarms are sent with every snapshot until the resolve timeout plus any
@@ -134,11 +145,29 @@ second default of `docker stop`.
 Delivery may be monitored with the following metrics, by `alertmanager`, which
 is the URL alerts are posted to without any credentials or query string:
 
-| Metric                                | Description                                                |
-|---------------------------------------|------------------------------------------------------------|
-| `onmsgrpc_alertmanager_total`         | Sends of alerts to an Alertmanager                         |
-| `onmsgrpc_alertmanager_failed_total`  | Sends to an Alertmanager that failed, after any retries    |
-| `onmsgrpc_alertmanager_retries_total` | Requests to an Alertmanager that were retried              |
+| Metric                                | Description                                                          |
+|---------------------------------------|----------------------------------------------------------------------|
+| `onmsgrpc_alertmanager_total`         | Sends of alerts to an Alertmanager                                   |
+| `onmsgrpc_alertmanager_failed_total`  | Sends to an Alertmanager that failed, after any retries, by `reason` |
+| `onmsgrpc_alertmanager_retries_total` | Requests to an Alertmanager that were retried                        |
+
+The `reason` label of `onmsgrpc_alertmanager_failed_total` is one of:
+
+| `reason`       | Failure                                                                                                                         |
+|----------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `redirect`     | A redirect (`3xx`), which is not followed (see above)                                                                           |
+| `client_error` | Any other unsuccessful response, mostly `4xx` (eg. `400` invalid alerts, `401`/`403` rejected credentials, `429` after retries) |
+| `server_error` | A `5xx` status, after retries                                                                                                   |
+| `network`      | No response, such as a DNS, TLS or connection error or a timeout, after retries                                                 |
+
+The series for every `reason` exist, at zero, from the first send to an
+Alertmanager, so the first failure is seen by `rate()` and `increase()`. The
+status and details of a failure are in the error logged. To see failures of an
+Alertmanager whatever the reason, sum over the label:
+
+```promql
+sum by (alertmanager) (rate(onmsgrpc_alertmanager_failed_total[5m]))
+```
 
 ### Alert Names and Labels
 

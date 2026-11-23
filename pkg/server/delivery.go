@@ -144,7 +144,7 @@ var retryBackoff = [maxAttempts - 1]time.Duration{500 * time.Millisecond, time.S
 // found by discovery, adding headers to every request, and registers its
 // metrics with reg
 func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string, logger *slog.Logger, reg prometheus.Registerer) (*alertDelivery, error) {
-	client := &http.Client{}
+	client := &http.Client{CheckRedirect: noRedirects}
 	if headers != nil {
 		client.Transport = &customTransport{
 			Headers: headers,
@@ -164,7 +164,7 @@ func newAlertDelivery(discovery alertmanagerDiscovery, headers map[string]string
 			Name: "onmsgrpc_alertmanager_failed_total",
 			Help: "Total number of messages that could not be sent to alertmanager.",
 		},
-			[]string{"alertmanager"}),
+			[]string{"alertmanager", "reason"}),
 		retries: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "onmsgrpc_alertmanager_retries_total",
 			Help: "Total number of requests to alertmanager that were retried after a failure.",
@@ -235,9 +235,16 @@ func (d *alertDelivery) post(ctx context.Context, u string, chunks [][]byte, log
 	name := safeURL(u)
 	d.total.WithLabelValues(name).Inc()
 
+	// create the failure series of every reason for this Alertmanager, so
+	// they exist from its first send and the first failure is not missed by
+	// rate() or increase()
+	for _, reason := range failureReasons {
+		d.errors.WithLabelValues(name, reason)
+	}
+
 	for i, payload := range chunks {
 		if err := d.postChunk(ctx, u, name, payload, logger); err != nil {
-			d.errors.WithLabelValues(name).Inc()
+			d.errors.WithLabelValues(name, failureReason(err)).Inc()
 			if len(chunks) > 1 {
 				return fmt.Errorf("sending chunk %d of %d: %w", i+1, len(chunks), err)
 			}
@@ -274,6 +281,17 @@ func (d *alertDelivery) postChunk(ctx context.Context, u, name string, payload [
 	}
 }
 
+// noRedirects stops the client following redirects, so a redirect is
+// returned as the response. Alertmanager does not redirect the alerts API, so
+// a redirect means the URL is wrong or something else answered, such as an
+// authenticating proxy sending the request to its login page. Following it
+// would send the headers to wherever it points, and a 301, 302 or 303 would
+// turn the POST into a GET without the alerts, which a login page answers
+// with 200 OK, so alerts would be lost while appearing to be sent.
+func noRedirects(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 // statusError is an unsuccessful response from an Alertmanager
 type statusError struct {
 	// url is the alerts URL of the Alertmanager as safeURL shows it
@@ -281,14 +299,89 @@ type statusError struct {
 	code   int
 	status string
 	body   []byte
+
+	// location is the scheme and host a redirect points to, if known
+	location string
 }
 
 func (e *statusError) Error() string {
-	if len(e.body) == 0 {
+	switch {
+	case e.location != "":
+		return fmt.Sprintf("alertmanager %s returned %s: redirected to %s", e.url, e.status, e.location)
+	case len(e.body) == 0:
 		return fmt.Sprintf("alertmanager %s returned %s", e.url, e.status)
 	}
 
 	return fmt.Sprintf("alertmanager %s returned %s: %s", e.url, e.status, e.body)
+}
+
+// newStatusError returns the statusError for resp, an unsuccessful response
+// from the Alertmanager shown as name. A redirect has only the scheme and host
+// it points to, not its path, query or body, as they may hold tokens, such as
+// those of a login page. Other responses have the start of their body, which
+// is what Alertmanager says was wrong.
+func newStatusError(resp *http.Response, name string) *statusError {
+	se := &statusError{url: name, code: resp.StatusCode, status: resp.Status}
+
+	if isRedirect(resp.StatusCode) {
+		if u, err := resp.Location(); err == nil && u.Host != "" {
+			se.location = u.Scheme + "://" + u.Host
+		}
+
+		return se
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+	se.body = bytes.TrimSpace(body)
+
+	return se
+}
+
+// isRedirect reports whether code is a redirect status
+func isRedirect(code int) bool {
+	return code >= 300 && code < 400
+}
+
+// The reasons a send to an Alertmanager failed, which are the values of the
+// reason label of onmsgrpc_alertmanager_failed_total. They are a fixed few so
+// that the metric has a bounded number of series. The details, such as the
+// status, are in the error logged.
+const (
+	// reasonRedirect is any redirect, which is not followed
+	reasonRedirect = "redirect"
+
+	// reasonClientError is any other unsuccessful response, mostly a 4xx
+	// status such as 400 for invalid alerts or 401 or 403 for rejected
+	// credentials
+	reasonClientError = "client_error"
+
+	// reasonServerError is a 5xx status, after any retries
+	reasonServerError = "server_error"
+
+	// reasonNetwork is a failure with no response, such as a DNS, TLS or
+	// connection error or a timeout, after any retries
+	reasonNetwork = "network"
+)
+
+// failureReasons is every reason a send may fail
+var failureReasons = []string{reasonRedirect, reasonClientError, reasonServerError, reasonNetwork}
+
+// failureReason returns the reason for err, the failure of a send to an
+// Alertmanager
+func failureReason(err error) string {
+	var se *statusError
+	if !errors.As(err, &se) {
+		return reasonNetwork
+	}
+
+	switch {
+	case isRedirect(se.code):
+		return reasonRedirect
+	case se.code >= http.StatusInternalServerError:
+		return reasonServerError
+	}
+
+	return reasonClientError
 }
 
 // retryable reports whether a request that failed with err may succeed if
@@ -327,9 +420,7 @@ func (d *alertDelivery) do(ctx context.Context, u, name string, payload []byte, 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-
-		return &statusError{url: name, code: resp.StatusCode, status: resp.Status, body: bytes.TrimSpace(body)}
+		return newStatusError(resp, name)
 	}
 
 	logger.Info("sent to alertmanager", "url", name, "status", resp.Status)
