@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.16.0...v0.17.0) (2026-11-25)
+
+
+### Features
+
+* **server:** add the onmsgrpc_alarm_remembered gauge ([24101e6](https://github.com/andrewheberle/onms-grpc-receiver/commit/24101e6821a724b483a831a6902d825044adcac2))
+
+
+### Bug Fixes
+
+* **server:** resolve only the alert an alarm fired with ([24101e6](https://github.com/andrewheberle/onms-grpc-receiver/commit/24101e6821a724b483a831a6902d825044adcac2))
+
 ## [0.16.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.15.0...v0.16.0) (2026-11-23)
 
 
