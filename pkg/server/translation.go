@@ -292,23 +292,39 @@ func validateAlertFields(kind string, fields map[string]string, builtin []string
 	return nil
 }
 
-// alarm returns the alerts for an alarm, or none if the alarm should not be
-// sent. A firing alarm's own alert is first.
+// firingSeverity is what is known of the Firing severity of an alarm: the
+// alert severity it was last sent with while firing
+type firingSeverity struct {
+	// known is false when the alarm may have been sent as firing with any
+	// alert severity, so a Severity fan-out is needed to resolve it
+	known bool
+
+	// severity is the Firing severity, or "" if the alarm has not been sent as
+	// firing
+	severity string
+
+	// cleared is true when the alarm has been cleared since it was last sent
+	// as firing, so the alert for its Firing severity has been resolved
+	cleared bool
+}
+
+// alarm returns the alerts for an alarm, given what is known of its Firing
+// severity, and what is known of its Firing severity once they are sent. A
+// firing alarm's own alert is first. remember is false when the alarm need
+// not be remembered, as it was cleared too long ago to be sent.
 //
 // The severity label is part of the identity of an alert, so when an alarm
-// changes severity or is cleared, the alert for its previous severity would
-// otherwise stay firing until it expires. As the previous severity is not
-// known, a cleared alarm is sent as a resolved alert for every alert
-// severity, and a firing alarm updated within the cleared alarm window is
-// also sent as a resolved alert for every other alert severity. Alertmanager
-// does not notify for resolved alerts that never fired. See ADR 0003.
-func (t *alertTranslator) alarm(ia instanceAlarm) []*postableAlert {
+// changes severity or is cleared, the alert for its Firing severity is sent
+// as resolved. When the Firing severity is not known, the alarm is sent as a
+// resolved alert for every other alert severity instead (a Severity fan-out).
+// See ADR 0006.
+func (t *alertTranslator) alarm(ia instanceAlarm, firing firingSeverity) (alerts []*postableAlert, next firingSeverity, remember bool) {
 	alarm := ia.alarm
 	cleared := alarm.GetSeverity() == uint32(pb.Severity_CLEARED)
 
 	// ignore Normal severity alarms
 	if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
-		return nil
+		return nil, firing, true
 	}
 
 	firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
@@ -324,7 +340,7 @@ func (t *alertTranslator) alarm(ia instanceAlarm) []*postableAlert {
 	// active in alertmanager.
 	recent := !lastUpdateTime.Before(ia.now.Add(-t.clearedAlarmWindow()))
 	if cleared && !recent {
-		return nil
+		return nil, firingSeverity{}, false
 	}
 
 	// add basics
@@ -403,27 +419,60 @@ func (t *alertTranslator) alarm(ia instanceAlarm) []*postableAlert {
 		}
 	}
 
-	var alerts []*postableAlert
-
 	// firing alerts end when the alarm was received plus the resolve timeout
 	// and hold
 	severity := t.alertSeverity(alarm.GetSeverity())
-	if !cleared {
+	if cleared {
+		next = firingSeverity{known: true, severity: firing.severity, cleared: true}
+	} else {
 		alerts = append(alerts, newAlert(severity, ia.now.Add(t.resolveTimeout+t.resolveHold)))
-		if !recent {
-			return alerts
-		}
+		next = firingSeverity{known: true, severity: severity}
 	}
 
 	// end the alerts for other severities when the alarm was last updated
-	for _, s := range t.alertSeverities {
-		if !cleared && s == severity {
-			continue
-		}
+	for _, s := range t.resolvedSeverities(firing, severity, cleared, recent) {
 		alerts = append(alerts, newAlert(s, lastUpdateTime))
 	}
 
-	return alerts
+	return alerts, next, true
+}
+
+// resolvedSeverities returns the alert severities an alarm is sent as resolved
+// with, given what is known of its Firing severity, its alert severity, and
+// whether it is cleared and was updated within the cleared alarm window
+func (t *alertTranslator) resolvedSeverities(firing firingSeverity, severity string, cleared, recent bool) []string {
+	switch {
+	case !firing.known:
+		// an alarm not updated within the window has not changed severity
+		// since any alert for another severity ended
+		if !recent {
+			return nil
+		}
+
+		var severities []string
+		for _, s := range t.alertSeverities {
+			if cleared || s != severity {
+				severities = append(severities, s)
+			}
+		}
+
+		return severities
+
+	case firing.severity == "":
+		// never sent as firing
+		return nil
+
+	case cleared:
+		// sent again while within the window, in case it was not delivered
+		return []string{firing.severity}
+
+	case firing.cleared || firing.severity == severity:
+		// already resolved when cleared, or still firing with this severity
+		return nil
+
+	default:
+		return []string{firing.severity}
+	}
 }
 
 // clearedAlarmWindow is how long after its last update a cleared alarm is

@@ -79,8 +79,8 @@ func (b *alarmBatcher) add(alarms []instanceAlarm) {
 	defer b.mu.RUnlock()
 
 	if b.stopped {
-		b.logger.Warn("alarm update received while stopping, dropping batch", "alarmcount", len(alarms))
-		b.dropped.Add(float64(len(alarms)))
+		b.logger.Warn("alarm update received while stopping, dropping batch", "alarmcount", alarmCount(alarms))
+		b.dropped.Add(float64(alarmCount(alarms)))
 		return
 	}
 
@@ -93,8 +93,8 @@ func (b *alarmBatcher) add(alarms []instanceAlarm) {
 		if len(alarms) > 0 {
 			logger = logger.With("instance_id", alarms[0].instanceID)
 		}
-		logger.Warn("alarm queue full, dropping batch", "alarmcount", len(alarms))
-		b.dropped.Add(float64(len(alarms)))
+		logger.Warn("alarm queue full, dropping batch", "alarmcount", alarmCount(alarms))
+		b.dropped.Add(float64(alarmCount(alarms)))
 	}
 }
 
@@ -142,7 +142,7 @@ func (b *alarmBatcher) run(ctx context.Context) {
 			}
 
 			if len(batch) > 0 {
-				b.logger.Info("batchWorker: flushing on shutdown", "alarmcount", len(batch))
+				b.logger.Info("batchWorker: flushing on shutdown", "alarmcount", alarmCount(batch))
 				b.flush(flushCtx, batch)
 			}
 			b.queueDepth.Set(0)
@@ -153,8 +153,8 @@ func (b *alarmBatcher) run(ctx context.Context) {
 
 			// the threshold is checked once a whole alarm update is added,
 			// so a batch may be larger than the threshold
-			if len(batch) >= b.flushThreshold {
-				b.logger.Info("batchWorker: flushing on size", "alarmcount", len(batch))
+			if alarmCount(batch) >= b.flushThreshold {
+				b.logger.Info("batchWorker: flushing on size", "alarmcount", alarmCount(batch))
 				b.flush(flushCtx, batch)
 				batch = nil
 				b.queueDepth.Set(float64(len(b.queue)))
@@ -167,7 +167,7 @@ func (b *alarmBatcher) run(ctx context.Context) {
 
 		case <-timer.C:
 			if len(batch) > 0 {
-				b.logger.Info("batchWorker: flushing on timer", "alarmcount", len(batch))
+				b.logger.Info("batchWorker: flushing on timer", "alarmcount", alarmCount(batch))
 				b.flush(flushCtx, batch)
 				batch = nil
 				b.queueDepth.Set(float64(len(b.queue)))

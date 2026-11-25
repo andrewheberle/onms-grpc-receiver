@@ -3,7 +3,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +21,9 @@ type fakeSender struct {
 	mu      sync.Mutex
 	alerts  []*postableAlert
 	ctxErrs []error
+
+	// err is returned from every send
+	err error
 }
 
 func (f *fakeSender) send(ctx context.Context, alerts []*postableAlert) error {
@@ -28,7 +33,7 @@ func (f *fakeSender) send(ctx context.Context, alerts []*postableAlert) error {
 	f.alerts = append(f.alerts, alerts...)
 	f.ctxErrs = append(f.ctxErrs, ctx.Err())
 
-	return nil
+	return f.err
 }
 
 // sent returns the alerts sent so far
@@ -281,6 +286,142 @@ func TestAlertPipelineLogsAlarms(t *testing.T) {
 				if !strings.Contains(got, want) {
 					t.Errorf("logs = %q, want containing %q", got, want)
 				}
+			}
+		})
+	}
+}
+
+// TestAlertPipelineFiringSeverity checks the Firing severity of each alarm is
+// remembered across flushes, so only the alert it fired with is resolved once
+// the first snapshot from its instance has been handled, and that a Severity
+// fan-out is used before then and after a failed delivery
+func TestAlertPipelineFiringSeverity(t *testing.T) {
+	now := time.Now()
+	recent := uint64(now.Add(-time.Minute).UnixMilli())
+
+	alarm := func(id uint64, severity pb.Severity) instanceAlarm {
+		return instanceAlarm{
+			alarm: pb.Alarm_builder{
+				Id:             id,
+				Uei:            "uei.opennms.org/nodes/nodeDown",
+				Severity:       uint32(severity),
+				FirstEventTime: recent,
+				LastEventTime:  recent,
+				LastUpdateTime: recent,
+			}.Build(),
+			now:          now,
+			instanceID:   "6f8a7c1e-uuid",
+			instanceName: "OpenNMS",
+		}
+	}
+	endOfSnapshot := instanceAlarm{now: now, instanceID: "6f8a7c1e-uuid", instanceName: "OpenNMS", endOfSnapshot: true}
+
+	type sent struct {
+		alarmID  string
+		severity string
+		firing   bool
+	}
+
+	steps := []struct {
+		name   string
+		alarms []instanceAlarm
+		fail   bool
+		want   []sent
+	}{
+		{"firing before the first snapshot", []instanceAlarm{alarm(1, pb.Severity_MAJOR)}, false, []sent{
+			{"1", "major", true},
+			{"1", "indeterminate", false},
+			{"1", "warning", false},
+			{"1", "minor", false},
+			{"1", "critical", false},
+		}},
+		{"first snapshot", []instanceAlarm{alarm(1, pb.Severity_MAJOR), endOfSnapshot}, false, []sent{
+			{"1", "major", true},
+		}},
+		{"new alarm after the first snapshot", []instanceAlarm{alarm(2, pb.Severity_MINOR)}, false, []sent{
+			{"2", "minor", true},
+		}},
+		{"cleared", []instanceAlarm{alarm(2, pb.Severity_CLEARED)}, false, []sent{
+			{"2", "minor", false},
+		}},
+		{"severity change that is not delivered", []instanceAlarm{alarm(1, pb.Severity_CRITICAL)}, true, []sent{
+			{"1", "critical", true},
+			{"1", "major", false},
+		}},
+		{"cleared after a failed delivery", []instanceAlarm{alarm(1, pb.Severity_CLEARED)}, false, []sent{
+			{"1", "indeterminate", false},
+			{"1", "warning", false},
+			{"1", "minor", false},
+			{"1", "major", false},
+			{"1", "critical", false},
+		}},
+		{"new alarm cleared in the same batch", []instanceAlarm{alarm(3, pb.Severity_MAJOR), alarm(3, pb.Severity_CLEARED)}, false, []sent{
+			{"3", "major", true},
+			{"3", "major", false},
+		}},
+	}
+
+	sender := &fakeSender{}
+	p, _ := newTestPipeline(t, sender, translationConfig{resolveTimeout: time.Minute * 5})
+
+	for _, step := range steps {
+		sender.err = nil
+		if step.fail {
+			sender.err = errors.New("not delivered")
+		}
+
+		before := len(sender.sent())
+		p.flush(context.Background(), step.alarms)
+
+		var got []sent
+		for _, a := range sender.sent()[before:] {
+			got = append(got, sent{a.Labels["alarm_id"], a.Labels["severity"], a.EndsAt.After(now)})
+		}
+		if !slices.Equal(got, step.want) {
+			t.Errorf("%s: sent %v, want %v", step.name, got, step.want)
+		}
+	}
+}
+
+// TestAlertPipelineSnapshotEnd checks the end of a snapshot, even an empty
+// one, is passed on to the firing memory, and an alarm update that is not a
+// snapshot is not
+func TestAlertPipelineSnapshotEnd(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name     string
+		snapshot bool
+		alarms   int
+		want     firingSeverity
+	}{
+		{"empty snapshot", true, 0, firingSeverity{known: true}},
+		{"snapshot", true, 2, firingSeverity{known: true}},
+		{"not a snapshot", false, 2, firingSeverity{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sender := &fakeSender{}
+			p, _ := newTestPipeline(t, sender, translationConfig{})
+
+			alarms := make([]*pb.Alarm, tt.alarms)
+			for i := range alarms {
+				alarms[i] = pb.Alarm_builder{Id: uint64(i + 1), Severity: uint32(pb.Severity_MAJOR)}.Build()
+			}
+
+			runPipeline(p, func() {
+				p.alarmUpdate(pb.AlarmUpdateList_builder{
+					InstanceId: "6f8a7c1e-uuid",
+					Snapshot:   tt.snapshot,
+					Alarms:     alarms,
+				}.Build(), now)
+			})
+
+			if got := p.memory.lookup(firingKey{instanceID: "6f8a7c1e-uuid", alarmID: 100}); got != tt.want {
+				t.Errorf("lookup() of an alarm not in the update = %+v, want %+v", got, tt.want)
+			}
+			if got := len(sender.sent()); got != tt.alarms {
+				t.Errorf("sent %d alerts, want %d", got, tt.alarms)
 			}
 		})
 	}

@@ -31,7 +31,7 @@ func newTestTranslator(t *testing.T, cfg translationConfig) *alertTranslator {
 // firstAlarmAlert returns the first alert for an alarm, which is the alarm's
 // own alert if it is firing, or nil if it is not sent
 func firstAlarmAlert(tr *alertTranslator, ia instanceAlarm) *postableAlert {
-	alerts := tr.alarm(ia)
+	alerts, _, _ := tr.alarm(ia, firingSeverity{})
 	if len(alerts) == 0 {
 		return nil
 	}
@@ -816,7 +816,8 @@ func TestNewAlertTranslatorSeverityMap(t *testing.T) {
 }
 
 // TestAlertTranslatorAlarmSeverityChange ensures the alert for an alarm's
-// previous severity is resolved when it is cleared or changes severity
+// previous severity is resolved when it is cleared or changes severity and its
+// Firing severity is not known, by a Severity fan-out
 func TestAlertTranslatorAlarmSeverityChange(t *testing.T) {
 	now := time.Now()
 	recent := time.UnixMilli(now.Add(-time.Minute).UnixMilli())
@@ -845,14 +846,14 @@ func TestAlertTranslatorAlarmSeverityChange(t *testing.T) {
 				runbookURLTemplate: "https://runbooks.example.com/{{ .Labels.severity }}",
 			})
 
-			alerts := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+			alerts, _, _ := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
 				Id:             1,
 				Uei:            "uei.opennms.org/nodes/nodeDown",
 				Severity:       uint32(tt.severity),
 				FirstEventTime: uint64(old.Add(-time.Hour).UnixMilli()),
 				LastEventTime:  uint64(tt.lastUpdate.UnixMilli()),
 				LastUpdateTime: uint64(tt.lastUpdate.UnixMilli()),
-			}.Build(), now: now, instanceName: "OpenNMS"})
+			}.Build(), now: now, instanceName: "OpenNMS"}, firingSeverity{})
 
 			var firing string
 			var resolved []string
@@ -884,6 +885,92 @@ func TestAlertTranslatorAlarmSeverityChange(t *testing.T) {
 			}
 			if !slices.Equal(resolved, tt.wantResolve) {
 				t.Errorf("resolved severities = %v, want %v", resolved, tt.wantResolve)
+			}
+		})
+	}
+}
+
+// TestAlertTranslatorAlarmFiringSeverity ensures only the alert for an alarm's
+// Firing severity is resolved when it is known, and checks what is known of
+// the Firing severity once the alerts are sent
+func TestAlertTranslatorAlarmFiringSeverity(t *testing.T) {
+	now := time.Now()
+	recent := time.UnixMilli(now.Add(-time.Minute).UnixMilli())
+	old := time.UnixMilli(now.Add(-time.Hour).UnixMilli())
+	merged := map[string]string{"major": "page", "critical": "page"}
+
+	unknown := firingSeverity{}
+	isNew := firingSeverity{known: true}
+	known := func(s string) firingSeverity { return firingSeverity{known: true, severity: s} }
+	cleared := func(s string) firingSeverity { return firingSeverity{known: true, severity: s, cleared: true} }
+
+	tests := []struct {
+		name         string
+		severityMap  map[string]string
+		severity     pb.Severity
+		lastUpdate   time.Time
+		firing       firingSeverity
+		wantFiring   string
+		wantResolve  []string
+		wantNext     firingSeverity
+		wantRemember bool
+	}{
+		{"new firing alarm", nil, pb.Severity_MAJOR, recent, isNew, "major", nil, known("major"), true},
+		{"firing with the same severity", nil, pb.Severity_MAJOR, recent, known("major"), "major", nil, known("major"), true},
+		{"firing with a new severity", nil, pb.Severity_MAJOR, recent, known("minor"), "major", []string{"minor"}, known("major"), true},
+		{"firing with a new severity updated long ago", nil, pb.Severity_MAJOR, old, known("minor"), "major", []string{"minor"}, known("major"), true},
+		{"firing again after being cleared", nil, pb.Severity_MAJOR, recent, cleared("minor"), "major", nil, known("major"), true},
+		{"firing with an unknown severity", nil, pb.Severity_MAJOR, recent, unknown, "major", []string{"indeterminate", "warning", "minor", "critical"}, known("major"), true},
+		{"firing with an unknown severity updated long ago", nil, pb.Severity_MAJOR, old, unknown, "major", nil, known("major"), true},
+		{"firing with a merged severity", merged, pb.Severity_CRITICAL, recent, known("page"), "page", nil, known("page"), true},
+		{"cleared with a known severity", nil, pb.Severity_CLEARED, recent, known("major"), "", []string{"major"}, cleared("major"), true},
+		{"cleared again within the window", nil, pb.Severity_CLEARED, recent, cleared("major"), "", []string{"major"}, cleared("major"), true},
+		{"cleared without firing", nil, pb.Severity_CLEARED, recent, isNew, "", nil, cleared(""), true},
+		{"cleared with an unknown severity", nil, pb.Severity_CLEARED, recent, unknown, "", []string{"indeterminate", "warning", "minor", "major", "critical"}, cleared(""), true},
+		{"cleared long ago", nil, pb.Severity_CLEARED, old, known("major"), "", nil, unknown, false},
+		{"normal", nil, pb.Severity_NORMAL, recent, known("major"), "", nil, known("major"), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := newTestTranslator(t, translationConfig{severityMap: tt.severityMap})
+
+			alerts, next, remember := tr.alarm(instanceAlarm{alarm: pb.Alarm_builder{
+				Id:             1,
+				Uei:            "uei.opennms.org/nodes/nodeDown",
+				Severity:       uint32(tt.severity),
+				FirstEventTime: uint64(old.Add(-time.Hour).UnixMilli()),
+				LastEventTime:  uint64(tt.lastUpdate.UnixMilli()),
+				LastUpdateTime: uint64(tt.lastUpdate.UnixMilli()),
+			}.Build(), now: now, instanceName: "OpenNMS"}, tt.firing)
+
+			var firing string
+			var resolved []string
+			for i, a := range alerts {
+				severity := a.Labels["severity"]
+				if a.EndsAt.After(now) {
+					if i != 0 {
+						t.Errorf("firing alert %q is alert %d, want 0", severity, i)
+					}
+					firing = severity
+					continue
+				}
+				if !a.EndsAt.Equal(tt.lastUpdate) {
+					t.Errorf("resolved alert %q EndsAt = %v, want last update time %v", severity, a.EndsAt, tt.lastUpdate)
+				}
+				resolved = append(resolved, severity)
+			}
+
+			if firing != tt.wantFiring {
+				t.Errorf("firing severity = %q, want %q", firing, tt.wantFiring)
+			}
+			if !slices.Equal(resolved, tt.wantResolve) {
+				t.Errorf("resolved severities = %v, want %v", resolved, tt.wantResolve)
+			}
+			if next != tt.wantNext {
+				t.Errorf("next = %+v, want %+v", next, tt.wantNext)
+			}
+			if remember != tt.wantRemember {
+				t.Errorf("remember = %v, want %v", remember, tt.wantRemember)
 			}
 		})
 	}
