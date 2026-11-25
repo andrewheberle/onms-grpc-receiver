@@ -136,8 +136,9 @@ therefore be the URL Alertmanager answers at.
 
 Alerts that could not be sent are not kept to be sent later. Firing alarms are
 sent again with the next alarm snapshot (every 2 minutes by default), and
-cleared alarms are sent with every snapshot until the resolve timeout plus any
-[hold](#handling-opennms-restarts) has passed since they were cleared.
+cleared and normal alarms are sent with every snapshot until the resolve
+timeout plus any [hold](#handling-opennms-restarts) has passed since they were
+last updated.
 
 When the receiver is stopped, it has up to 5 seconds to send the alarms it has
 already received, so stopping takes at most about 8 seconds, within the 10
@@ -195,6 +196,13 @@ firing, the receiver remembers the severity each alarm's alert last fired with,
 and sends that alert as resolved (at the time the alarm was last updated). A
 cleared alarm is only sent as this resolved alert, so no alert has a `severity`
 of `cleared`.
+
+A `normal` alarm is handled in the same way as a cleared one: it is only sent
+to resolve the alert its alarm last fired with, if any, so no alert has a
+`severity` of `normal`. Most normal alarms never fired, such as those for
+`nodeUp` events, but an alarm whose severity is updated by each event reduced
+into it can go from firing to normal without being cleared, such as
+`uei.opennms.org/circuitBreaker/stateChange`.
 
 The receiver only remembers what it has sent itself, and only while it is
 running. When it cannot be sure which severity an alarm's alert fired with, it
@@ -347,8 +355,8 @@ default value. The runbook URL template sees the mapped value in
 The receiver will not start if a mapping:
 
 * Is for a severity that is not `indeterminate`, `warning`, `minor`, `major` or
-  `critical`. `normal` alarms are never sent and `cleared` is used to end
-  alerts, so neither can be mapped.
+  `critical`. `cleared` and `normal` alarms are only sent to end alerts, so
+  neither can be mapped.
 * Has an empty value.
 
 Several severities may be mapped to the same value (for example
