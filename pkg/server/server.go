@@ -208,6 +208,9 @@ func (s *ServiceSyncServer) Serve(ctx context.Context, l net.Listener, opts ...g
 }
 
 func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.AlarmUpdateList, emptypb.Empty]) error {
+	// the pipeline is told of a new stream until an alarm update from it has
+	// been queued
+	firstOnStream := true
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {
@@ -218,7 +221,9 @@ func (s *ServiceSyncServer) AlarmUpdate(stream grpc.BidiStreamingServer[pb.Alarm
 			return err
 		}
 
-		s.pipeline.alarmUpdate(in, time.Now())
+		if s.pipeline.alarmUpdate(in, time.Now(), firstOnStream) {
+			firstOnStream = false
+		}
 	}
 }
 

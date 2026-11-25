@@ -73,20 +73,21 @@ func newAlarmBatcher(flush func(context.Context, []instanceAlarm), queueSize, fl
 }
 
 // add queues the alarms of an alarm update, dropping them if the queue is
-// full or the batcher has stopped
-func (b *alarmBatcher) add(alarms []instanceAlarm) {
+// full or the batcher has stopped, and reports whether they were queued
+func (b *alarmBatcher) add(alarms []instanceAlarm) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	if b.stopped {
 		b.logger.Warn("alarm update received while stopping, dropping batch", "alarmcount", alarmCount(alarms))
 		b.dropped.Add(float64(alarmCount(alarms)))
-		return
+		return false
 	}
 
 	select {
 	case b.queue <- alarms:
 		b.queueDepth.Set(float64(len(b.queue)))
+		return true
 	default:
 		// all alarms in an update are from the same instance
 		logger := b.logger
@@ -95,6 +96,7 @@ func (b *alarmBatcher) add(alarms []instanceAlarm) {
 		}
 		logger.Warn("alarm queue full, dropping batch", "alarmcount", alarmCount(alarms))
 		b.dropped.Add(float64(alarmCount(alarms)))
+		return false
 	}
 }
 

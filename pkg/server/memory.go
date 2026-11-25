@@ -106,6 +106,21 @@ func (m *firingMemory) markUnknown(keys []firingKey) {
 	}
 }
 
+// reconnected marks the Firing severity of every alarm of an instance as
+// unknown, and the first snapshot from it as not yet handled, as it has opened
+// a new alarm update stream. While it was not connected to this receiver it
+// may have sent alarm updates to another, which this receiver does not know
+// were sent.
+func (m *firingMemory) reconnected(instanceID string) {
+	delete(m.snapshotted, instanceID)
+	for key, e := range m.alarms {
+		if key.instanceID == instanceID {
+			e.firing = firingSeverity{}
+			m.alarms[key] = e
+		}
+	}
+}
+
 // snapshotHandled records that a snapshot from an instance has been handled
 func (m *firingMemory) snapshotHandled(instanceID string) {
 	m.snapshotted[instanceID] = true

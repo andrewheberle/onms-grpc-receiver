@@ -187,13 +187,19 @@ func TestAlarmBatcherQueueFull(t *testing.T) {
 	b := must(newAlarmBatcher(r.flush, 2, 100, time.Hour, slog.New(slog.DiscardHandler), reg))(t)
 
 	// nothing takes from the queue while the batcher is not running
-	b.add(update(1))
-	b.add(update(1))
+	for i := range 2 {
+		if !b.add(update(1)) {
+			t.Errorf("add() of update %d = false, want queued", i)
+		}
+	}
 	if got := metricValue(t, reg, "onmsgrpc_alarm_queue_depth"); got != 2 {
 		t.Errorf("queueDepth = %v, want 2", got)
 	}
 
-	b.add(update(3))
+	// the start of a stream and end of a snapshot are not counted as alarms
+	if b.add(append(update(3), instanceAlarm{instanceID: "test", startOfStream: true}, instanceAlarm{instanceID: "test", endOfSnapshot: true})) {
+		t.Error("add() to a full queue = true, want dropped")
+	}
 	if got := metricValue(t, reg, "onmsgrpc_alarm_dropped_total"); got != 3 {
 		t.Errorf("dropped = %v, want 3 for the alarms in the update that did not fit", got)
 	}

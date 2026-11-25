@@ -96,7 +96,7 @@ func TestAlertPipelineAlarmUpdate(t *testing.T) {
 					LastEventTime:  uint64(now.UnixMilli()),
 				}.Build(),
 			},
-		}.Build(), now)
+		}.Build(), now, true)
 	})
 
 	got := sender.sent()
@@ -148,7 +148,7 @@ func TestAlertPipelineLastSnapshot(t *testing.T) {
 
 			runPipeline(p, func() {
 				for _, u := range tt.updates {
-					p.alarmUpdate(u, now)
+					p.alarmUpdate(u, now, false)
 				}
 			})
 
@@ -216,7 +216,7 @@ func TestAlertPipelineSendContext(t *testing.T) {
 			runPipeline(p, func() {
 				p.alarmUpdate(pb.AlarmUpdateList_builder{
 					Alarms: []*pb.Alarm{fullAlarm(now)},
-				}.Build(), now)
+				}.Build(), now, true)
 			})
 		}, false},
 	}
@@ -270,7 +270,7 @@ func TestAlertPipelineLogsAlarms(t *testing.T) {
 					InstanceId:   "6f8a7c1e-uuid",
 					InstanceName: "OpenNMS",
 					Alarms:       []*pb.Alarm{fullAlarm(now)},
-				}.Build(), now)
+				}.Build(), now, true)
 			})
 
 			// the alarm is sent either way
@@ -315,6 +315,7 @@ func TestAlertPipelineFiringSeverity(t *testing.T) {
 		}
 	}
 	endOfSnapshot := instanceAlarm{now: now, instanceID: "6f8a7c1e-uuid", instanceName: "OpenNMS", endOfSnapshot: true}
+	startOfStream := instanceAlarm{now: now, instanceID: "6f8a7c1e-uuid", instanceName: "OpenNMS", startOfStream: true}
 
 	type sent struct {
 		alarmID  string
@@ -358,6 +359,22 @@ func TestAlertPipelineFiringSeverity(t *testing.T) {
 		{"new alarm cleared in the same batch", []instanceAlarm{alarm(3, pb.Severity_MAJOR), alarm(3, pb.Severity_CLEARED)}, false, []sent{
 			{"3", "major", true},
 			{"3", "major", false},
+		}},
+		{"remembered alarm after reconnecting", []instanceAlarm{startOfStream, alarm(4, pb.Severity_MINOR), alarm(2, pb.Severity_MINOR)}, false, []sent{
+			{"4", "minor", true},
+			{"4", "indeterminate", false},
+			{"4", "warning", false},
+			{"4", "major", false},
+			{"4", "critical", false},
+			{"2", "minor", true},
+			{"2", "indeterminate", false},
+			{"2", "warning", false},
+			{"2", "major", false},
+			{"2", "critical", false},
+		}},
+		{"snapshot after reconnecting", []instanceAlarm{alarm(2, pb.Severity_MINOR), endOfSnapshot, alarm(5, pb.Severity_MAJOR)}, false, []sent{
+			{"2", "minor", true},
+			{"5", "major", true},
 		}},
 	}
 
@@ -414,7 +431,7 @@ func TestAlertPipelineSnapshotEnd(t *testing.T) {
 					InstanceId: "6f8a7c1e-uuid",
 					Snapshot:   tt.snapshot,
 					Alarms:     alarms,
-				}.Build(), now)
+				}.Build(), now, true)
 			})
 
 			if got := p.memory.lookup(firingKey{instanceID: "6f8a7c1e-uuid", alarmID: 100}); got != tt.want {

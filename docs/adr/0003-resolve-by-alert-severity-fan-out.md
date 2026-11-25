@@ -1,3 +1,7 @@
+---
+status: superseded by ADR 0006
+---
+
 # Resolve previous severities by sending every Alert severity
 
 The `severity` label is part of an Alert's identity, so when an Alarm is cleared or changes severity, its new Alert does not resolve the Alert for its previous severity, which stayed firing until the resolve timeout plus the Resolve hold passed. The Alarm does not carry its previous severity and the receiver keeps no record of the Alerts it has sent (ADR 0002), so a Cleared Alarm is sent as a resolved Alert for every distinct Alert severity, and a firing Alarm whose Last update time is within the cleared Alarm window is also sent as a resolved Alert for every other Alert severity. Alertmanager does not notify for an alert group that has only ever held resolved Alerts, so only the Alert that was firing produces a notification.

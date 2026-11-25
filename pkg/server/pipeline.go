@@ -14,19 +14,24 @@ import (
 const alarmQueueSize = 100
 
 // instanceAlarm is an alarm from a Horizon instance waiting to be flushed, or
-// with no alarm, the end of a snapshot from the instance
+// with no alarm, the start of an alarm update stream or the end of a snapshot
+// from the instance
 type instanceAlarm struct {
 	alarm        *pb.Alarm
 	now          time.Time
 	instanceID   string
 	instanceName string
 
+	// startOfStream is set, with no alarm, before the alarms of the first
+	// alarm update queued from a new alarm update stream
+	startOfStream bool
+
 	// endOfSnapshot is set, with no alarm, after the alarms of a snapshot
 	endOfSnapshot bool
 }
 
-// alarmCount returns the number of alarms in alarms, not counting the ends of
-// snapshots
+// alarmCount returns the number of alarms in alarms, not counting the starts
+// of streams or ends of snapshots
 func alarmCount(alarms []instanceAlarm) int {
 	n := 0
 	for _, ia := range alarms {
@@ -126,8 +131,11 @@ func (p *alertPipeline) run(ctx context.Context) {
 }
 
 // alarmUpdate queues the alarms of an alarm update received at now, dropping
-// them if the queue is full or the pipeline has stopped
-func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
+// them if the queue is full or the pipeline has stopped, and reports whether
+// they were queued. firstOnStream is set until an alarm update from a new
+// alarm update stream has been queued, as the Horizon instance may have sent
+// alarm updates to another receiver while it was not connected to this one.
+func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time, firstOnStream bool) bool {
 	id := update.GetInstanceId()
 	name := update.GetInstanceName()
 	alarms := update.GetAlarms()
@@ -150,7 +158,19 @@ func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
 	)
 
 	// wrap alarms with instance info before enqueuing
-	wrapped := make([]instanceAlarm, 0, len(alarms)+1)
+	wrapped := make([]instanceAlarm, 0, len(alarms)+2)
+
+	// mark the start of a new stream, so the firing memory no longer trusts
+	// what it holds for the instance
+	if firstOnStream {
+		wrapped = append(wrapped, instanceAlarm{
+			instanceID:    id,
+			instanceName:  name,
+			now:           now,
+			startOfStream: true,
+		})
+	}
+
 	for _, alarm := range alarms {
 		wrapped = append(wrapped, instanceAlarm{
 			alarm:        alarm,
@@ -172,7 +192,7 @@ func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
 	}
 
 	// enqueue - drop if full (best effort)
-	p.batcher.add(wrapped)
+	return p.batcher.add(wrapped)
 }
 
 // heartbeat sends the alert for a heartbeat received at now, which stops if
@@ -218,7 +238,11 @@ func (p *alertPipeline) flush(ctx context.Context, alarms []instanceAlarm) {
 	list := make([]*postableAlert, 0)
 	keys := make([]firingKey, 0, len(alarms))
 	for _, ia := range alarms {
-		if ia.endOfSnapshot {
+		switch {
+		case ia.startOfStream:
+			p.memory.reconnected(ia.instanceID)
+			continue
+		case ia.endOfSnapshot:
 			p.memory.snapshotHandled(ia.instanceID)
 			continue
 		}

@@ -43,6 +43,25 @@ func TestFiringMemoryLookup(t *testing.T) {
 			m.snapshotHandled("a")
 			m.markUnknown([]firingKey{key})
 		}, firingSeverity{known: true}},
+		{"reconnected", func(m *firingMemory) {
+			m.snapshotHandled("a")
+			m.record(key, major, now)
+			m.reconnected("a")
+		}, firingSeverity{}},
+		{"not remembered after reconnecting", func(m *firingMemory) {
+			m.snapshotHandled("a")
+			m.reconnected("a")
+		}, firingSeverity{}},
+		{"snapshot after reconnecting", func(m *firingMemory) {
+			m.snapshotHandled("a")
+			m.reconnected("a")
+			m.snapshotHandled("a")
+		}, firingSeverity{known: true}},
+		{"another instance reconnected", func(m *firingMemory) {
+			m.snapshotHandled("a")
+			m.record(key, major, now)
+			m.reconnected("b")
+		}, major},
 		{"forgotten", func(m *firingMemory) {
 			m.snapshotHandled("a")
 			m.record(key, major, now)
