@@ -189,13 +189,35 @@ Labels are set as follows:
 | Interface (IP address)                   | ip_address         | Only present on alarms with an interface |
 | Node Location                            | site               |                                         |
 
-As `severity` is a label, it is part of the identity of an alert. When an
-alarm is cleared or changes severity, the receiver does not know which severity
-its alert was firing with, so it also sends the alert as resolved for every
-other severity (at the time the alarm was last updated). The previous alert is
-resolved straight away, and Alertmanager does not notify for the others as they
-never fired. A cleared alarm is only sent as these resolved alerts, so no alert
-has a `severity` of `cleared`.
+As `severity` is a label, it is part of the identity of an alert. So that a
+cleared alarm, or one that changes severity, resolves the alert that was
+firing, the receiver remembers the severity each alarm's alert last fired with,
+and sends that alert as resolved (at the time the alarm was last updated). A
+cleared alarm is only sent as this resolved alert, so no alert has a `severity`
+of `cleared`.
+
+The receiver only remembers what it has sent itself, and only while it is
+running. When it cannot be sure which severity an alarm's alert fired with, it
+sends the alert as resolved for every other severity instead:
+
+* After the receiver starts, until the first alarm snapshot from the Horizon
+  instance (every 2 minutes by default).
+* After a Horizon instance reconnects, until the first alarm snapshot on the
+  new connection, as it may have sent alarms to another receiver (see
+  [High Availability](#high-availability)).
+* After the alerts for an alarm could not be sent to Alertmanager.
+
+Alertmanager lists these resolved alerts in a notification when they share an
+alert group with an alert that fired, which is the case when `group_by` does
+not include `severity`. So for a short time after a restart or reconnect,
+notifications may list resolved alerts that never fired.
+
+Alarms are remembered by the instance ID of their Horizon instance and their
+alarm ID. Horizon instances share an instance ID when they were built from a
+copy of the same database, or when their installs skipped the upgrade tools,
+which leaves the all-zeros default. Alarms from such instances can be mistaken
+for each other's, so a cleared alarm may leave an alert firing until the
+resolve timeout plus any [hold](#handling-opennms-restarts) has passed.
 
 The instance name is the `org.opennms.instance.id` system property of the
 Horizon instance, which defaults to `OpenNMS`. When forwarding alarms from more
@@ -440,6 +462,15 @@ groups:
 
 The second rule also covers the period after the receiver restarts, until the next snapshot arrives.
 
+### Remembered alarms
+
+The `onmsgrpc_alarm_remembered` gauge is the number of alarms from each Horizon
+instance (by `instance_id`) whose alert severity the receiver remembers (see
+[Alert Names and Labels](#alert-names-and-labels)). An alarm is forgotten once
+it has not been received for the resolve timeout plus any
+[hold](#handling-opennms-restarts), so the gauge follows the number of alarms
+in each snapshot, plus those cleared within that time.
+
 ### Build information
 
 The `onmsgrpc_build_info` gauge is always `1`, with labels describing the
@@ -551,10 +582,14 @@ it for images in the OCI format.
 
 ## High Availability
 
-The receiver keeps no state of its own: what is firing is held by
+The receiver keeps little state of its own: what is firing is held by
 Alertmanager, and every alarm snapshot from OpenNMS repairs anything missed.
 So several receivers can run side by side, active/active, behind a TCP load
-balancer or a Kubernetes Service, with nothing shared between them.
+balancer or a Kubernetes Service, with nothing shared between them. The only
+state is the severity each alarm's alert last fired with (see
+[Alert Names and Labels](#alert-names-and-labels)), which a receiver stops
+relying on for a Horizon instance whenever it reconnects, until its next alarm
+snapshot.
 
 * Each Horizon instance connects to one receiver at a time, as its gRPC
   exporter sends everything over a single connection to the host it is

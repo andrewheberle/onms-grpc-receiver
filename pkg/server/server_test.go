@@ -132,6 +132,55 @@ func TestAlarmUpdate(t *testing.T) {
 	}
 }
 
+// TestAlarmUpdateNewStream checks only the first alarm update from a new
+// stream resets what the firing memory knows of its instance, as it may have
+// sent alarm updates to another receiver while not connected to this one
+func TestAlarmUpdateNewStream(t *testing.T) {
+	update := func(snapshot bool) *pb.AlarmUpdateList {
+		return pb.AlarmUpdateList_builder{
+			InstanceId:   "6f8a7c1e-uuid",
+			InstanceName: "OpenNMS",
+			Snapshot:     snapshot,
+		}.Build()
+	}
+
+	tests := []struct {
+		name    string
+		updates []*pb.AlarmUpdateList
+		want    firingSeverity
+	}{
+		{"first update resets", []*pb.AlarmUpdateList{update(false)}, firingSeverity{}},
+		{"later updates do not reset", []*pb.AlarmUpdateList{update(true), update(false)}, firingSeverity{known: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := must(NewServiceSyncServer())(t)
+
+			// as if a snapshot was received on an earlier stream
+			s.pipeline.memory.snapshotHandled("6f8a7c1e-uuid")
+
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				s.pipeline.run(ctx)
+			}()
+
+			if err := s.AlarmUpdate(&alarmStream{updates: tt.updates}); err != nil {
+				t.Fatalf("AlarmUpdate() error = %v", err)
+			}
+
+			// stopping flushes the queued alarms
+			cancel()
+			<-done
+
+			if got := s.pipeline.memory.lookup(firingKey{instanceID: "6f8a7c1e-uuid", alarmID: 1}); got != tt.want {
+				t.Errorf("lookup() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestHeartBeatUpdate checks translated heartbeats are sent to alertmanager,
 // the details of each alert are covered by the alertTranslator tests
 func TestHeartBeatUpdate(t *testing.T) {
@@ -453,7 +502,7 @@ func TestServiceSyncServerMetrics(t *testing.T) {
 	s.pipeline.heartbeat(context.Background(), pb.HeartBeat_builder{
 		MonitoringInstance: pb.MonitoringInstance_builder{InstanceId: "test", InstanceName: "OpenNMS"}.Build(),
 	}.Build(), now)
-	s.pipeline.alarmUpdate(pb.AlarmUpdateList_builder{InstanceId: "test", Snapshot: true}.Build(), now)
+	s.pipeline.alarmUpdate(pb.AlarmUpdateList_builder{InstanceId: "test", Snapshot: true}.Build(), now, true)
 
 	families, err := reg.Gather()
 	if err != nil {

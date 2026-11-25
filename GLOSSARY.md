@@ -58,6 +58,14 @@ _Avoid_: Priority, alert level
 Operator configuration that replaces the Alert severity for chosen firing Alarm severities, so Alerts match the severity scheme of the operator's Alertmanager.
 _Avoid_: Severity mapping, severity override, severity alias
 
+**Firing severity**:
+The Alert severity an Alarm was last sent with while firing.
+_Avoid_: Previous severity, last severity
+
+**Severity fan-out**:
+Sending an Alarm as a resolved Alert for every Alert severity it might have fired with, used when its Firing severity is not known.
+_Avoid_: Resolve-all, broadcast
+
 **Alertmanager**:
 A Prometheus Alertmanager that receives Alerts; there may be several, listed directly or found from a DNS SRV record, and each one is sent every Alert.
 _Avoid_: AM, receiver, target

@@ -13,11 +13,34 @@ import (
 // alarmQueueSize is the number of alarm updates that may wait to be batched
 const alarmQueueSize = 100
 
+// instanceAlarm is an alarm from a Horizon instance waiting to be flushed, or
+// with no alarm, the start of an alarm update stream or the end of a snapshot
+// from the instance
 type instanceAlarm struct {
 	alarm        *pb.Alarm
 	now          time.Time
 	instanceID   string
 	instanceName string
+
+	// startOfStream is set, with no alarm, before the alarms of the first
+	// alarm update queued from a new alarm update stream
+	startOfStream bool
+
+	// endOfSnapshot is set, with no alarm, after the alarms of a snapshot
+	endOfSnapshot bool
+}
+
+// alarmCount returns the number of alarms in alarms, not counting the starts
+// of streams or ends of snapshots
+func alarmCount(alarms []instanceAlarm) int {
+	n := 0
+	for _, ia := range alarms {
+		if ia.alarm != nil {
+			n++
+		}
+	}
+
+	return n
 }
 
 // alertSender sends alerts to every Alertmanager currently known
@@ -36,6 +59,9 @@ type alertPipeline struct {
 	sender     alertSender
 	batcher    *alarmBatcher
 	logger     *slog.Logger
+
+	// the Firing severity of each alarm, only used while flushing
+	memory *firingMemory
 
 	// log every alarm in full
 	logAlarms bool
@@ -80,10 +106,20 @@ func newAlertPipeline(translator *alertTranslator, sender alertSender, flushThre
 			[]string{"instance_id"}),
 	}
 	batcher, err := newAlarmBatcher(p.flush, alarmQueueSize, flushThreshold, flushInterval, logger, reg)
-	if err := errors.Join(err, register(reg, p.alarmTotal, p.alarmCount, p.alarmLastSnapshot, p.heartbeatTotal)); err != nil {
+
+	// alarms are remembered for as long as a cleared alarm is still sent. The
+	// translator is nil when its configuration was invalid, in which case the
+	// pipeline is not used.
+	var window time.Duration
+	if translator != nil {
+		window = translator.clearedAlarmWindow()
+	}
+	memory, memoryErr := newFiringMemory(window, reg)
+	if err := errors.Join(err, memoryErr, register(reg, p.alarmTotal, p.alarmCount, p.alarmLastSnapshot, p.heartbeatTotal)); err != nil {
 		return nil, err
 	}
 	p.batcher = batcher
+	p.memory = memory
 
 	return p, nil
 }
@@ -95,8 +131,11 @@ func (p *alertPipeline) run(ctx context.Context) {
 }
 
 // alarmUpdate queues the alarms of an alarm update received at now, dropping
-// them if the queue is full or the pipeline has stopped
-func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
+// them if the queue is full or the pipeline has stopped, and reports whether
+// they were queued. firstOnStream is set until an alarm update from a new
+// alarm update stream has been queued, as the Horizon instance may have sent
+// alarm updates to another receiver while it was not connected to this one.
+func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time, firstOnStream bool) bool {
 	id := update.GetInstanceId()
 	name := update.GetInstanceName()
 	alarms := update.GetAlarms()
@@ -119,7 +158,19 @@ func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
 	)
 
 	// wrap alarms with instance info before enqueuing
-	wrapped := make([]instanceAlarm, 0, len(alarms))
+	wrapped := make([]instanceAlarm, 0, len(alarms)+2)
+
+	// mark the start of a new stream, so the firing memory no longer trusts
+	// what it holds for the instance
+	if firstOnStream {
+		wrapped = append(wrapped, instanceAlarm{
+			instanceID:    id,
+			instanceName:  name,
+			now:           now,
+			startOfStream: true,
+		})
+	}
+
 	for _, alarm := range alarms {
 		wrapped = append(wrapped, instanceAlarm{
 			alarm:        alarm,
@@ -129,8 +180,19 @@ func (p *alertPipeline) alarmUpdate(update *pb.AlarmUpdateList, now time.Time) {
 		})
 	}
 
+	// mark the end of a snapshot, even an empty one, so the firing memory
+	// knows when it holds every alarm of the instance
+	if isSnapshot {
+		wrapped = append(wrapped, instanceAlarm{
+			instanceID:    id,
+			instanceName:  name,
+			now:           now,
+			endOfSnapshot: true,
+		})
+	}
+
 	// enqueue - drop if full (best effort)
-	p.batcher.add(wrapped)
+	return p.batcher.add(wrapped)
 }
 
 // heartbeat sends the alert for a heartbeat received at now, which stops if
@@ -167,21 +229,47 @@ func (p *alertPipeline) heartbeat(ctx context.Context, hb *pb.HeartBeat, now tim
 }
 
 // flush translates a batch of alarms and sends the resulting alerts, which
-// stops if ctx is cancelled
+// stops if ctx is cancelled. The Firing severity of each alarm is looked up
+// before it is translated and remembered afterwards, in the order the alarms
+// were received. If the alerts are not delivered, the Firing severity of every
+// alarm in the batch is marked as unknown, so a Severity fan-out resolves
+// whichever alert is firing. See ADR 0006.
 func (p *alertPipeline) flush(ctx context.Context, alarms []instanceAlarm) {
 	list := make([]*postableAlert, 0)
+	keys := make([]firingKey, 0, len(alarms))
 	for _, ia := range alarms {
+		switch {
+		case ia.startOfStream:
+			p.memory.reconnected(ia.instanceID)
+			continue
+		case ia.endOfSnapshot:
+			p.memory.snapshotHandled(ia.instanceID)
+			continue
+		}
+
 		if p.logAlarms {
 			p.logAlarm(ia)
 		}
 
-		list = append(list, p.translator.alarm(ia)...)
+		key := firingKey{instanceID: ia.instanceID, alarmID: ia.alarm.GetId()}
+		alerts, next, remember := p.translator.alarm(ia, p.memory.lookup(key))
+		if remember {
+			p.memory.record(key, next, ia.now)
+			keys = append(keys, key)
+		} else {
+			p.memory.forget(key)
+		}
+
+		list = append(list, alerts...)
 	}
 
 	// send to alertmanager at the end
 	if err := p.sender.send(ctx, list); err != nil {
 		p.logger.Error("error during send", "error", err)
+		p.memory.markUnknown(keys)
 	}
+
+	p.memory.prune(time.Now())
 }
 
 // logAlarm logs every field of an alarm, for when alarms are logged in full
