@@ -28,6 +28,10 @@ _Avoid_: Resolved alarm, closed alarm
 An Alarm removed from a Horizon instance without being cleared, known only by its absence from a Snapshot.
 _Avoid_: Missing alarm, vanished alarm, stale alarm
 
+**Normal Alarm**:
+An Alarm whose severity is Normal, which OpenNMS defines as informational with no action required, although it may once have been firing.
+_Avoid_: Informational alarm, OK alarm
+
 **Last update time**:
 The later of an Alarm's last event time and its last automation time; for a Cleared Alarm, the best available record of when it was cleared.
 _Avoid_: Clear time, modified time

@@ -186,8 +186,8 @@ var firingSeverities = []pb.Severity{
 
 // parseSeverityMap checks a severity map, returning it keyed by OpenNMS
 // severity, or a single error describing every problem found. Only firing
-// severities may be mapped, as normal alarms are never sent and cleared
-// alarms are how alerts are ended.
+// severities may be mapped, as cleared and normal alarms are only sent to end
+// alerts.
 func parseSeverityMap(m map[string]string) (map[uint32]string, error) {
 	severities := make(map[uint32]string, len(m))
 
@@ -303,8 +303,9 @@ type firingSeverity struct {
 	// firing
 	severity string
 
-	// cleared is true when the alarm has been cleared since it was last sent
-	// as firing, so the alert for its Firing severity has been resolved
+	// cleared is true when the alarm has been cleared, or become normal,
+	// since it was last sent as firing, so the alert for its Firing severity
+	// has been resolved
 	cleared bool
 }
 
@@ -318,14 +319,13 @@ type firingSeverity struct {
 // as resolved. When the Firing severity is not known, the alarm is sent as a
 // resolved alert for every other alert severity instead (a Severity fan-out).
 // See ADR 0006.
+//
+// A normal alarm is handled as a cleared one, as it is not a problem but may
+// have been one, such as an alarm whose severity is updated by each event
+// reduced into it.
 func (t *alertTranslator) alarm(ia instanceAlarm, firing firingSeverity) (alerts []*postableAlert, next firingSeverity, remember bool) {
 	alarm := ia.alarm
-	cleared := alarm.GetSeverity() == uint32(pb.Severity_CLEARED)
-
-	// ignore Normal severity alarms
-	if alarm.GetSeverity() == uint32(pb.Severity_NORMAL) {
-		return nil, firing, true
-	}
+	cleared := alarm.GetSeverity() == uint32(pb.Severity_CLEARED) || alarm.GetSeverity() == uint32(pb.Severity_NORMAL)
 
 	firstEventTime := time.UnixMilli(int64(alarm.GetFirstEventTime()))
 

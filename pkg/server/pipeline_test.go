@@ -376,6 +376,10 @@ func TestAlertPipelineFiringSeverity(t *testing.T) {
 			{"2", "minor", true},
 			{"5", "major", true},
 		}},
+		{"severity updated to normal", []instanceAlarm{alarm(5, pb.Severity_NORMAL)}, false, []sent{
+			{"5", "major", false},
+		}},
+		{"new normal alarm", []instanceAlarm{alarm(6, pb.Severity_NORMAL)}, false, nil},
 	}
 
 	sender := &fakeSender{}
