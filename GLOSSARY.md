@@ -24,6 +24,10 @@ _Avoid_: Full sync, dump
 An Alarm whose severity is Cleared, meaning the problem has been resolved but OpenNMS still holds the record.
 _Avoid_: Resolved alarm, closed alarm
 
+**Deleted Alarm**:
+An Alarm removed from a Horizon instance without being cleared, known only by its absence from a Snapshot.
+_Avoid_: Missing alarm, vanished alarm, stale alarm
+
 **Last update time**:
 The later of an Alarm's last event time and its last automation time; for a Cleared Alarm, the best available record of when it was cleared.
 _Avoid_: Clear time, modified time
