@@ -63,10 +63,11 @@ type spogCommand struct {
 
 	headers map[string]string
 
-	alertLabels      map[string]string
-	alertAnnotations map[string]string
-	alertRunbookURL  string
-	alertSeverity    map[string]string
+	alertLabels         map[string]string
+	alertLabelTemplates map[string]string
+	alertAnnotations    map[string]string
+	alertRunbookURL     string
+	alertSeverity       map[string]string
 
 	*koanfcommand.Command
 }
@@ -89,6 +90,7 @@ func (c *spogCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.MarkFlagsMutuallyExclusive("alertmanager.url", "alertmanager.srv")
 	cmd.Flags().StringToStringVar(&c.headers, "headers", map[string]string{}, "Custom headers")
 	cmd.Flags().StringToStringVar(&c.alertLabels, "alert.labels", map[string]string{}, "Labels added to all alerts")
+	cmd.Flags().StringToStringVar(&c.alertLabelTemplates, "alert.label-templates", map[string]string{}, "Templates for labels added to alarm alerts")
 	cmd.Flags().StringToStringVar(&c.alertAnnotations, "alert.annotations", map[string]string{}, "Annotations added to all alerts")
 	cmd.Flags().StringVar(&c.alertRunbookURL, "alert.runbook-url", "", "Template for the runbook URL of alerts without one in their operator instructions")
 	cmd.Flags().StringToStringVar(&c.alertSeverity, "alert.severity", map[string]string{}, "Map OpenNMS severities to alert severities")
@@ -137,6 +139,7 @@ func (c *spogCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		server.WithResolveHold(c.resolveHold),
 		server.WithSRVCacheTTL(c.srvCacheTTL),
 		server.WithAlertLabels(c.alertLabels),
+		server.WithAlertLabelTemplates(c.alertLabelTemplates),
 		server.WithAlertAnnotations(c.alertAnnotations),
 		server.WithRunbookURLTemplate(c.alertRunbookURL),
 		server.WithSeverityMap(c.alertSeverity),

@@ -464,6 +464,7 @@ func TestNewAlertTranslatorRunbookURLTemplate(t *testing.T) {
 	}{
 		{"none", "", ""},
 		{"valid", "https://runbooks.example.com/{{ pathEscape .Labels.alertname }}", ""},
+		{"shared function", "https://runbooks.example.com/{{ toLower .Labels.alertname }}", ""},
 		{"parse error", "https://runbooks.example.com/{{ .Labels.alertname", "invalid runbook URL template: "},
 		{"unknown field", "https://runbooks.example.com/{{ .Lables.alertname }}", "invalid runbook URL template: "},
 		{"unknown function", "https://runbooks.example.com/{{ lower .Labels.alertname }}", "invalid runbook URL template: "},
