@@ -14,29 +14,30 @@ docker run -p 8080:8080 ghcr.io/andrewheberle/onms-grpc-receiver:v0.17.0 --alert
 
 ## Command Line Options
 
-| Flag                  | Decription                                                 | Default        |
-|-----------------------|------------------------------------------------------------|----------------|
-| --address             | Service gRPC listen address                                | localhost:8080 |
-| --alert.annotations   | Annotations added to all alerts                            |                |
-| --alert.labels        | Labels added to all alerts                                 |                |
-| --alert.runbook-url   | Template for alerts without a runbook URL                  |                |
-| --alert.severity      | Map OpenNMS severities to alert severities (see below)     |                |
-| --alertmanager.scheme | Alertmanager scheme (http/https) when SRV records are used | http           |
-| --alertmanager.srv    | Alertmanager SRV Record                                    |                |
-| --alertmanager.url    | Alertmanager URL                                           |                |
-| --cert                | TLS Certificate                                            |                |
-| --debug               | Enable debug logging                                       |                |
-| --grpc.max-recv-size  | Max gRPC message size in bytes (must be greater than zero) | 67108864       |
-| --headers             | Headers added to requests to Alertmanager (see below)      |                |
-| --key                 | TLS Key                                                    |                |
-| --map.url             | Map Horizon instance ID's to URLs                          |                |
-| --metrics.address     | Metrics listen address                                     |                |
-| --metrics.path        | Metrics path                                               | /metrics       |
-| --silent              | Disable all logging                                        |                |
-| --verbose             | Log all messages                                           |                |
-| --resolve.timeout     | Resolve timeout for alarms (must be greater than zero)     | 5m             |
-| --resolve.hold        | Extra time firing alarm alerts stay active (see below)     | 0s             |
-| --srv.ttl             | TTL for cached SRV lookups (`0` disables caching)          | 30s            |
+| Flag                    | Decription                                                 | Default        |
+|-------------------------|------------------------------------------------------------|----------------|
+| --address               | Service gRPC listen address                                | localhost:8080 |
+| --alert.annotations     | Annotations added to all alerts                            |                |
+| --alert.label-templates | Templates for labels added to alarm alerts (see below)     |                |
+| --alert.labels          | Labels added to all alerts                                 |                |
+| --alert.runbook-url     | Template for alerts without a runbook URL                  |                |
+| --alert.severity        | Map OpenNMS severities to alert severities (see below)     |                |
+| --alertmanager.scheme   | Alertmanager scheme (http/https) when SRV records are used | http           |
+| --alertmanager.srv      | Alertmanager SRV Record                                    |                |
+| --alertmanager.url      | Alertmanager URL                                           |                |
+| --cert                  | TLS Certificate                                            |                |
+| --debug                 | Enable debug logging                                       |                |
+| --grpc.max-recv-size    | Max gRPC message size in bytes (must be greater than zero) | 67108864       |
+| --headers               | Headers added to requests to Alertmanager (see below)      |                |
+| --key                   | TLS Key                                                    |                |
+| --map.url               | Map Horizon instance ID's to URLs                          |                |
+| --metrics.address       | Metrics listen address                                     |                |
+| --metrics.path          | Metrics path                                               | /metrics       |
+| --silent                | Disable all logging                                        |                |
+| --verbose               | Log all messages                                           |                |
+| --resolve.timeout       | Resolve timeout for alarms (must be greater than zero)     | 5m             |
+| --resolve.hold          | Extra time firing alarm alerts stay active (see below)     | 0s             |
+| --srv.ttl               | TTL for cached SRV lookups (`0` disables caching)          | 30s            |
 
 Options are checked when the receiver starts, and it will not start if any are
 invalid, listing every problem found so they can all be fixed at once.
@@ -269,7 +270,9 @@ with `--alert.runbook-url` (or `ONMS_GRPC_ALERT_RUNBOOK_URL`) to give alerts a
 in the operator instructions is always used in preference to the template.
 
 The template is a Go [text/template](https://pkg.go.dev/text/template) and is
-given the labels of the alert, including any additional labels, as `.Labels`:
+given the labels of the alert, including any additional labels and labels from
+[label templates](#label-templates), as `.Labels`, and has the same
+[functions](#label-template-functions) as label templates:
 
 ```sh
 onms-grpc-receiver spog --alert.runbook-url 'https://runbooks.example.com/{{ .Labels.alertname }}'
@@ -330,6 +333,92 @@ changing an additional label turns every firing alert into a new alert, with the
 previous alert expiring after the resolve timeout (5 minutes by default) plus
 any [hold](#handling-opennms-restarts). Changes to additional annotations do
 not.
+
+### Label Templates
+
+Labels built from the details of each alarm may be added to its alerts with
+`--alert.label-templates` (or `ONMS_GRPC_ALERT_LABEL_TEMPLATES`), as
+`name=template` entries in the same format as `--alert.labels`. For example, to
+group or route alerts by the type of device, based on how nodes are named and
+which requisition they are in:
+
+```sh
+onms-grpc-receiver spog --alert.label-templates 'device_class={{ if hasPrefix .Alarm.NodeLabel "sw-" }}switch{{ else if eq .Alarm.ForeignSource "vmware" }}vm{{ end }}'
+```
+
+Each template is a Go [text/template](https://pkg.go.dev/text/template), and
+is given the labels of the alert as `.Labels`: the built-in labels, including
+`severity` after any [severity map](#severity-map), and any additional labels.
+Label templates do not see each other's labels. The details of the alarm are
+given as `.Alarm`:
+
+| Field                          | OpenNMS Alarm Field                 |
+|--------------------------------|-------------------------------------|
+| `.Alarm.ID`                    | Alarm ID                            |
+| `.Alarm.UEI`                   | UEI                                 |
+| `.Alarm.NodeID`                | Node ID                             |
+| `.Alarm.NodeLabel`             | Node label                          |
+| `.Alarm.ForeignSource`         | Node foreign source (requisition)   |
+| `.Alarm.ForeignID`             | Node foreign ID                     |
+| `.Alarm.Location`              | Node location                       |
+| `.Alarm.IPAddress`             | Interface (IP address)              |
+| `.Alarm.ServiceName`           | Service name                        |
+| `.Alarm.ReductionKey`          | Reduction key                       |
+| `.Alarm.ClearKey`              | Clear key                           |
+| `.Alarm.IfIndex`               | SNMP interface index                |
+| `.Alarm.ManagedObjectType`     | Managed object type                 |
+| `.Alarm.ManagedObjectInstance` | Managed object instance             |
+
+Only details that do not change while an alarm is active are given. As labels
+form the identity of an alert, a label built from a detail that changes, such
+as the alarm's count or acknowledgement, would make the alert a new alert each
+time it changed.
+
+A template that results in an empty string adds no label, so a template only
+needs to cover the alarms it applies to. A template that fails for an alarm,
+such as a regular expression built from an alarm detail that is not valid, adds
+no label and logs a warning. Label templates are only used for alarm alerts,
+not the `OpenNMSHeartbeat` alert.
+
+Entries are separated by commas, so a template that contains a comma must be
+quoted as a whole, doubling any quotes inside it:
+
+```sh
+export ONMS_GRPC_ALERT_LABEL_TEMPLATES='"node={{ printf ""%s,%s"" .Alarm.ForeignSource .Alarm.ForeignID }}",device_class={{ toLower .Alarm.ForeignSource }}'
+```
+
+The receiver will not start if a label template:
+
+* Has the same name as a built-in label or an additional label.
+* Has a name that is not a valid Prometheus label name (`[a-zA-Z_][a-zA-Z0-9_]*`)
+  or starts with `__`, which is reserved.
+* Is empty, or is not a valid template, such as when it refers to
+  `.Alarm.Nodelabel` rather than `.Alarm.NodeLabel`.
+
+As with additional labels, adding, removing or changing a label template turns
+every firing alert it gives a label into a new alert, with the previous alert
+expiring after the resolve timeout plus any [hold](#handling-opennms-restarts).
+A change to an alarm detail used by a template does the same, which is why only
+details that do not change are given.
+
+#### Label Template Functions
+
+Label templates and the [runbook URL template](#runbook-url-template) may use
+Go's [built-in functions](https://pkg.go.dev/text/template#hdr-Functions), such
+as `eq`, `and`, `or`, `not`, `printf` and `index`, and the following, named as
+in Alertmanager's notification templates where it has the same function:
+
+| Function                            | Result                                                      |
+|-------------------------------------|-------------------------------------------------------------|
+| `toLower s`                         | `s` in lower case                                           |
+| `toUpper s`                         | `s` in upper case                                           |
+| `trimSpace s`                       | `s` without leading or trailing white space                 |
+| `hasPrefix s prefix`                | Whether `s` starts with `prefix`                            |
+| `hasSuffix s suffix`                | Whether `s` ends with `suffix`                              |
+| `contains s substr`                 | Whether `s` contains `substr`                               |
+| `match pattern s`                   | Whether the regular expression `pattern` matches `s`        |
+| `reReplaceAll pattern replacement s`| `s` with each match of `pattern` replaced (`$1` for groups) |
+| `pathEscape s`                      | `s` escaped for use as a single URL path segment            |
 
 ### Severity Map
 

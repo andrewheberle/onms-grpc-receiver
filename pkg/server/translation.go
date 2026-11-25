@@ -61,6 +61,9 @@ type translationConfig struct {
 
 	// extra time firing alarm alerts stay active after the resolve timeout
 	resolveHold time.Duration
+
+	// templates for labels added to alarm alerts, keyed by label name
+	labelTemplates map[string]string
 }
 
 // alertTranslator turns alarms and heartbeats from Horizon instances into
@@ -70,6 +73,9 @@ type alertTranslator struct {
 
 	// parsed runbookURLTemplate, nil if not set
 	runbookTemplate *template.Template
+
+	// parsed labelTemplates, sorted by label name
+	parsedLabelTemplates []labelTemplate
 
 	// parsed severityMap, keyed by OpenNMS severity
 	severities map[uint32]string
@@ -92,8 +98,8 @@ type runbookData struct {
 // newAlertTranslator returns a translator for the given configuration. The
 // error returned joins every problem: an extra label or annotation that
 // clashes with a built-in one, has an invalid name or has an empty value, an
-// invalid runbook URL template, severity map or URL map, a resolve timeout
-// that is not greater than zero, or a negative resolve hold.
+// invalid runbook URL template, label template, severity map or URL map, a
+// resolve timeout that is not greater than zero, or a negative resolve hold.
 func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTranslator, error) {
 	var problems []error
 
@@ -114,6 +120,9 @@ func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTrans
 	tmpl, err := parseRunbookURLTemplate(cfg.runbookURLTemplate)
 	problems = append(problems, err)
 
+	labelTemplates, err := parseLabelTemplates(cfg.labelTemplates, cfg.extraLabels)
+	problems = append(problems, err)
+
 	severities, err := parseSeverityMap(cfg.severityMap)
 	problems = append(problems, err)
 
@@ -125,11 +134,12 @@ func newAlertTranslator(cfg translationConfig, logger *slog.Logger) (*alertTrans
 	}
 
 	t := &alertTranslator{
-		translationConfig: cfg,
-		runbookTemplate:   tmpl,
-		severities:        severities,
-		alarmLinks:        alarmLinks,
-		logger:            logger,
+		translationConfig:    cfg,
+		runbookTemplate:      tmpl,
+		parsedLabelTemplates: labelTemplates,
+		severities:           severities,
+		alarmLinks:           alarmLinks,
+		logger:               logger,
 	}
 
 	for _, severity := range firingSeverities {
@@ -237,7 +247,7 @@ func parseRunbookURLTemplate(s string) (*template.Template, error) {
 
 	tmpl, err := template.New("runbook_url").
 		Option("missingkey=zero").
-		Funcs(template.FuncMap{"pathEscape": url.PathEscape}).
+		Funcs(templateFuncs).
 		Parse(s)
 	if err != nil {
 		return nil, fmt.Errorf("invalid runbook URL template: %w", err)
@@ -398,9 +408,13 @@ func (t *alertTranslator) alarm(ia instanceAlarm, firing firingSeverity) (alerts
 		generatorURL = link + fmt.Sprintf("?id=%d", alarm.GetId())
 	}
 
+	// the details label templates can use, the same for every alert
+	details := newTemplateAlarm(alarm)
+
 	newAlert := func(severity string, endsAt time.Time) *postableAlert {
 		labels := maps.Clone(labels)
 		labels["severity"] = severity
+		t.addTemplateLabels(labels, details)
 		annotations := maps.Clone(annotations)
 
 		// use the runbook URL template if the operator instructions had no URL

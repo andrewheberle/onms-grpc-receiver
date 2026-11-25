@@ -81,6 +81,20 @@ func WithAlertLabels(labels map[string]string) ServiceSyncServerOption {
 	}
 }
 
+// WithAlertLabelTemplates sets Go text/templates, keyed by label name, for
+// labels added to alarm alerts, built from the alert's labels and the details
+// of its alarm that do not change while it is active. A template that gives an
+// empty value adds no label. An error is returned by NewServiceSyncServer if a
+// name is invalid or clashes with a built-in or extra label, or a template is
+// invalid.
+func WithAlertLabelTemplates(templates map[string]string) ServiceSyncServerOption {
+	return func(s *ServiceSyncServer) error {
+		s.translationConfig.labelTemplates = templates
+
+		return nil
+	}
+}
+
 // WithAlertAnnotations sets annotations that are added to all alerts. An
 // error is returned by NewServiceSyncServer if any annotation clashes with a
 // built-in annotation, has an invalid name or has an empty value.

@@ -90,6 +90,10 @@ _Avoid_: Forwarding, dispatch, notification
 The rules that turn an Alarm or Heartbeat from a Horizon instance into an Alert, or decide it is not sent.
 _Avoid_: Conversion, mapping, alert builder
 
+**Label template**:
+An operator-configured pattern that builds a label for each Alarm's Alert from its stable details.
+_Avoid_: Dynamic label, computed label, custom label
+
 **Runbook URL template**:
 An operator-configured pattern that builds an Alert's runbook URL from its labels, used when the Alarm's Operator instructions contain no URL.
 _Avoid_: Runbook default, runbook fallback, runbook pattern
