@@ -179,17 +179,26 @@ The alert name sent to Alertmanager is the OpenNMS "uei" value such as
 
 Labels are set as follows:
 
-| OpenNMS Alarm Field                      | Alertmanager Label |                                         |
-|------------------------------------------|--------------------|-----------------------------------------|
-| UEI of Alarm                             | alertname          |                                         |
-| Alarm ID                                 | alarm_id           |                                         |
-| Node Name                                | node_name          |                                         |
-| Node Foreign Source (requisition)        | foreign_source     | Only present for provisioned nodes      |
-| Instance Name (name of Horizon instance) | instance_name      |                                         |
-| Severity                                 | severity           |                                         |
-| Service (name)                           | service            | Only present on service outages         |
-| Interface (IP address)                   | ip_address         | Only present on alarms with an interface |
-| Node Location                            | site               |                                         |
+| OpenNMS Alarm Field                      | Alertmanager Label |                                           |
+|------------------------------------------|--------------------|-------------------------------------------|
+| UEI of Alarm                             | alertname          |                                           |
+| Alarm ID                                 | alarm_id           |                                           |
+| Node Name                                | node_name          |                                           |
+| Node Foreign Source (requisition)        | foreign_source     | Only present for provisioned nodes        |
+| Instance Name (name of Horizon instance) | instance_name      |                                           |
+| Severity                                 | severity           |                                           |
+| Service (name)                           | service            | Not currently sent by Horizon (see below) |
+| Interface (IP address)                   | ip_address         | Only present on alarms with an interface  |
+| Node Location                            | site               |                                           |
+
+The `service` label is only set when the alarm has a service name, which would
+be on service outages such as `nodeLostService`. However, the gRPC exporter in
+current Horizon releases does not fill in the service name of an alarm, so
+alerts do not have a `service` label. Its `AlarmMapper` has no mapping for the
+field, as the alarm's service is held as a service type rather than a service
+name. The label will appear once Horizon sends the service name, which will
+give firing alerts for service outages a new identity, as with any change to
+their labels.
 
 As `severity` is a label, it is part of the identity of an alert. So that a
 cleared alarm, or one that changes severity, resolves the alert that was
