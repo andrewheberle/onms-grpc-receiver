@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.17.0...v0.18.0) (2026-11-25)
+
+
+### Features
+
+* **server:** add label templates for alarm alerts ([#217](https://github.com/andrewheberle/onms-grpc-receiver/issues/217)) ([d9c94c4](https://github.com/andrewheberle/onms-grpc-receiver/commit/d9c94c46166f76775267e2f228cb46de1f654a4c))
+
+
+### Bug Fixes
+
+* **server:** resolve the alert of an alarm that becomes normal ([#215](https://github.com/andrewheberle/onms-grpc-receiver/issues/215)) ([512430c](https://github.com/andrewheberle/onms-grpc-receiver/commit/512430cf22b8a4488632bb09f6997948ad5e3d1a))
+
 ## [0.17.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.16.0...v0.17.0) (2026-11-25)
 
 
