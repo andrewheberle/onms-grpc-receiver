@@ -78,12 +78,19 @@ func TestAlertTranslatorAlarmSkips(t *testing.T) {
 			LastEventTime:  ms(-time.Hour),
 			LastUpdateTime: ms(-time.Hour),
 		}.Build(), false},
-		{"normal alarm", pb.Alarm_builder{
+		{"recently normal alarm", pb.Alarm_builder{
 			Id:             5,
 			Severity:       uint32(pb.Severity_NORMAL),
-			FirstEventTime: ms(-time.Minute),
+			FirstEventTime: ms(-time.Hour * 2),
 			LastEventTime:  ms(-time.Minute),
 			LastUpdateTime: ms(-time.Minute),
+		}.Build(), true},
+		{"old normal alarm from snapshot", pb.Alarm_builder{
+			Id:             6,
+			Severity:       uint32(pb.Severity_NORMAL),
+			FirstEventTime: ms(-time.Hour * 2),
+			LastEventTime:  ms(-time.Hour),
+			LastUpdateTime: ms(-time.Hour),
 		}.Build(), false},
 	}
 	for _, tt := range tests {
@@ -928,7 +935,12 @@ func TestAlertTranslatorAlarmFiringSeverity(t *testing.T) {
 		{"cleared without firing", nil, pb.Severity_CLEARED, recent, isNew, "", nil, cleared(""), true},
 		{"cleared with an unknown severity", nil, pb.Severity_CLEARED, recent, unknown, "", []string{"indeterminate", "warning", "minor", "major", "critical"}, cleared(""), true},
 		{"cleared long ago", nil, pb.Severity_CLEARED, old, known("major"), "", nil, unknown, false},
-		{"normal", nil, pb.Severity_NORMAL, recent, known("major"), "", nil, known("major"), true},
+		{"normal with a known severity", nil, pb.Severity_NORMAL, recent, known("warning"), "", []string{"warning"}, cleared("warning"), true},
+		{"normal again within the window", nil, pb.Severity_NORMAL, recent, cleared("warning"), "", []string{"warning"}, cleared("warning"), true},
+		{"normal without firing", nil, pb.Severity_NORMAL, recent, isNew, "", nil, cleared(""), true},
+		{"normal with an unknown severity", nil, pb.Severity_NORMAL, recent, unknown, "", []string{"indeterminate", "warning", "minor", "major", "critical"}, cleared(""), true},
+		{"normal long ago", nil, pb.Severity_NORMAL, old, known("warning"), "", nil, unknown, false},
+		{"firing again after being normal", nil, pb.Severity_WARNING, recent, cleared("warning"), "warning", nil, known("warning"), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
