@@ -416,6 +416,21 @@ send anything when an alarm is deleted, so an alarm deleted without first being
 cleared resolves its alert the resolve timeout plus the hold after the last
 snapshot that included it.
 
+OpenNMS deletes alarms without clearing them when their node is deleted, and
+through the default `GC` and `fullGC` rules in
+`etc/alarmd/drools-rules.d/alarmd.drl`, whatever their severity:
+
+* `GC` deletes an alarm that is not acknowledged once it has had no new event
+  or automation for 3 days.
+* `fullGC` deletes any alarm once it has had no new event or automation for 8
+  days. Acknowledging an alarm does not count, so the 8 days run from its last
+  event or automation.
+
+A long outage, such as a node that stays down, usually raises a single event,
+so its alarm can be deleted, and its alert resolved, while the problem is
+still there. To keep such alerts firing, acknowledge long-running alarms or
+change these rules in OpenNMS.
+
 ## Logging
 
 Logs are written to stderr in logfmt, with the level in a `level` field in
