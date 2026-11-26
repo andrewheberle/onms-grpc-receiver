@@ -58,6 +58,11 @@ Run these before considering any change complete:
 - Don't edit `.goreleaser.yaml` or CI config unless the task is specifically about them.
 - Do not create or push a tag unless specifically directed to as this triggers the release workflow.
 
+## Protobuf definitions
+- `proto/spog.proto` is a copy of OpenNMS's `features/grpc/exporter/src/main/proto/spog.proto` at a Horizon release tag (`opennms-X.Y.Z-N`), named in its header comment. The header comment is the only difference from upstream.
+- To update it: replace everything below the header comment with the file at the new tag, set the tag in the header comment, then run `go generate ./...` and commit the `.proto` and the regenerated `pkg/spog` files together.
+- `go generate` uses the protoc plugins pinned by the `tool` directives in `go.mod`. `protoc` itself is installed by hand; its version appears only in the generated file headers.
+
 ## Boundaries
 - Don't commit secrets, tokens, or real config values.
 - Don't modify generated files; regenerate them with `go generate ./...`.

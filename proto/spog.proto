@@ -1,3 +1,8 @@
+// Copied unchanged, apart from this comment, from OpenNMS Horizon release
+// opennms-34.0.2-1:
+// https://github.com/OpenNMS/opennms/blob/opennms-34.0.2-1/features/grpc/exporter/src/main/proto/spog.proto
+// See "Protobuf definitions" in AGENTS.md to update it.
+
 /*
  * Licensed to The OpenNMS Group, Inc (TOG) under one or more
  * contributor license agreements.  See the LICENSE.md file
