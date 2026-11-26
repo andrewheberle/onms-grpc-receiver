@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.18.0...v0.19.0) (2026-11-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the unused pkg/bsm package ([#219](https://github.com/andrewheberle/onms-grpc-receiver/issues/219))
+
+### Features
+
+* remove the unused pkg/bsm package ([#219](https://github.com/andrewheberle/onms-grpc-receiver/issues/219)) ([ba8ffc3](https://github.com/andrewheberle/onms-grpc-receiver/commit/ba8ffc30343ec3165ca5d17e1ef56d55c13eded6))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/prometheus/alertmanager to v0.35.1 ([#205](https://github.com/andrewheberle/onms-grpc-receiver/issues/205)) ([be84fd4](https://github.com/andrewheberle/onms-grpc-receiver/commit/be84fd451bfedfb3ff8fc7bbc8da2a14596a1262))
+
 ## [0.18.0](https://github.com/andrewheberle/onms-grpc-receiver/compare/v0.17.0...v0.18.0) (2026-11-25)
 
 
