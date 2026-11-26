@@ -1,0 +1,70 @@
+name: Upstream proto
+
+# proto/spog.proto is a copy of the OpenNMS file at a Horizon release tag
+# (see "Protobuf definitions" in AGENTS.md). This opens an issue, or updates
+# the open one, when the file in the latest Horizon release differs.
+on:
+  schedule:
+    - cron: "17 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-proto
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check spog.proto
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM_PATH: features/grpc/exporter/src/main/proto/spog.proto
+      ISSUE_TITLE: spog.proto differs from the latest OpenNMS Horizon release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare with the latest Horizon release
+        run: |
+          set -euo pipefail
+
+          tag=$(gh api repos/OpenNMS/opennms/releases/latest --jq .tag_name)
+          curl -sSfL -o "$RUNNER_TEMP/upstream.proto" \
+            "https://raw.githubusercontent.com/OpenNMS/opennms/${tag}/${UPSTREAM_PATH}"
+
+          # compare from the upstream licence comment on, skipping our header
+          # comment, and ignore a missing final newline
+          sed -n '/^\/\*/,$p' proto/spog.proto | sed -e '$a\' > "$RUNNER_TEMP/ours.proto"
+          sed -n '/^\/\*/,$p' "$RUNNER_TEMP/upstream.proto" | sed -e '$a\' > "$RUNNER_TEMP/theirs.proto"
+
+          if diff -u --label proto/spog.proto --label "${tag}/spog.proto" \
+            "$RUNNER_TEMP/ours.proto" "$RUNNER_TEMP/theirs.proto" > "$RUNNER_TEMP/proto.diff"; then
+            echo "proto/spog.proto matches ${tag}"
+            exit 0
+          fi
+
+          {
+            echo "\`proto/spog.proto\` differs from [\`spog.proto\` in ${tag}](https://github.com/OpenNMS/opennms/blob/${tag}/${UPSTREAM_PATH})."
+            echo
+            echo "To update the copy, see \"Protobuf definitions\" in \`AGENTS.md\`."
+            echo
+            echo '```diff'
+            cat "$RUNNER_TEMP/proto.diff"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"${ISSUE_TITLE}\" in:title" --json number,title \
+            --jq "map(select(.title == env.ISSUE_TITLE)) | first | .number // empty")
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/body.md"
+            echo "updated issue #${issue} for ${tag}"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" \
+              --label needs-triage --body-file "$RUNNER_TEMP/body.md"
+          fi
